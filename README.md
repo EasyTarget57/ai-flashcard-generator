@@ -1,12 +1,13 @@
 # AI Flashcard Generator
 
-Generate Anki flashcards with high-quality AI-generated audio.
+Generate Anki flashcards with high-quality AI-generated audio for multiple languages.
 
 Currently supports:
 - Vocabulary flashcards
 - Sentence flashcards
 - OpenAI Text-to-Speech
 - Anki `.apkg` generation
+- **Multi-language support** (Japanese, Spanish, French, and more)
 
 ---
 
@@ -51,13 +52,23 @@ pip install -r requirements.txt
 # Project Structure
 
 ```
+languages.json                    (language configuration)
+
 input/
+  japanese/
+    vocabulary.csv
+    sentences.csv
+  spanish/
     vocabulary.csv
     sentences.csv
 
 audio/
+  japanese/
+  spanish/
 
 output/
+  japanese/
+  spanish/
 
 generate_audio.py
 generate_apkg.py
@@ -65,11 +76,57 @@ generate_apkg.py
 
 ---
 
+# Configuration
+
+Edit `languages.json` to add new languages or modify existing ones:
+
+```json
+{
+  "japanese": {
+    "name": "Japanese",
+    "voice": "coral",
+    "instructions": "Speak naturally in standard Japanese...",
+    "model_name": "Japanese Model",
+    "fields": ["Japanese", "English", "Romaji", "Audio", "Notes"],
+    "csv_files": ["vocabulary.csv", "sentences.csv"]
+  },
+  "spanish": {
+    "name": "Spanish",
+    "voice": "nova",
+    "instructions": "Speak naturally in standard Spanish...",
+    "model_name": "Spanish Model",
+    "fields": ["Spanish", "English", "Audio", "Notes"],
+    "csv_files": ["vocabulary.csv", "sentences.csv"]
+  }
+}
+```
+
+### Configuration Fields:
+- **name**: Display name for the deck
+- **voice**: OpenAI voice to use (coral, nova, shimmer, etc.)
+- **instructions**: Instructions for the text-to-speech model
+- **model_name**: Name of the Anki model
+- **fields**: List of card fields (order matters!)
+- **csv_files**: CSV files to process for this language
+
+---
+
 # Usage
 
-## Step 1 - Download subtitles
+## Step 1 - Set up language folders
 
-Download the subtitles from a YouTube video.
+Create language-specific input folders:
+
+```
+mkdir input\japanese
+mkdir input\spanish
+```
+
+---
+
+## Step 2 - Download subtitles
+
+Download subtitles from a YouTube video.
 
 For example:
 
@@ -79,13 +136,13 @@ Download them as **TXT**.
 
 ---
 
-## Step 2 - Generate the CSV files
+## Step 3 - Generate the CSV files
 
 Use ChatGPT (or another LLM) with the following prompt.
 
 ---
 
-### Prompt
+### Prompt for Japanese
 
 You are creating flashcards for a complete beginner learning Japanese.
 
@@ -137,7 +194,19 @@ Guidelines:
 
 ---
 
-## Step 3 - Copy the CSV files
+### Prompt for Other Languages
+
+Adapt the Japanese prompt for your target language. Ensure CSV column names match your language configuration in `languages.json`.
+
+For example, for Spanish:
+
+```
+ID,Spanish,English,Notes
+```
+
+---
+
+## Step 4 - Copy the CSV files
 
 Copy
 
@@ -146,47 +215,53 @@ vocabulary.csv
 sentences.csv
 ```
 
-into
+into the appropriate language folder, e.g.:
 
 ```
-input/
+input\japanese\
 ```
 
----
-
-## Step 4 - Generate audio
-
-Run
+or
 
 ```
-python generate_audio.py
-```
-
-This generates MP3 files in
-
-```
-audio/
+input\spanish\
 ```
 
 ---
 
-## Step 5 - Generate the Anki deck
+## Step 5 - Generate audio
 
-Run
-
-```
-python generate_apkg.py
-```
-
-The generated deck will be written to
+Run the audio generation script with the `--language` flag:
 
 ```
-output/
+python generate_audio.py --language japanese
+```
+
+This generates MP3 files in:
+
+```
+audio/japanese/
 ```
 
 ---
 
-## Step 6 - Import into Anki
+## Step 6 - Generate the Anki deck
+
+Run the deck generation script with the `--language` flag:
+
+```
+python generate_apkg.py --language japanese
+```
+
+The generated deck will be written to:
+
+```
+output/japanese/
+```
+
+---
+
+## Step 7 - Import into Anki
 
 Open Anki.
 
@@ -206,10 +281,10 @@ The deck will automatically import with audio.
 
 Future improvements include:
 
-- Multiple language support
 - Automatic subtitle download
 - Automatic vocabulary extraction
 - Automatic translation
 - Automatic romanization
 - Duplicate detection
 - Incremental deck updates
+- Web UI for easier configuration

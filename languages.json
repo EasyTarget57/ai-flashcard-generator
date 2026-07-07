@@ -1,0 +1,51 @@
+{
+  "japanese": {
+    "name": "Japanese",
+    "voice": "coral",
+    "instructions": "Speak naturally in standard Japanese. Use clear pronunciation suitable for a beginner learning Japanese.",
+    "model_name": "Japanese Model",
+    "fields": [
+      "Japanese",
+      "English",
+      "Romaji",
+      "Audio",
+      "Notes"
+    ],
+    "csv_files": [
+      "vocabulary.csv",
+      "sentences.csv"
+    ]
+  },
+  "spanish": {
+    "name": "Spanish",
+    "voice": "nova",
+    "instructions": "Speak naturally in standard Spanish. Use clear pronunciation suitable for a beginner learning Spanish.",
+    "model_name": "Spanish Model",
+    "fields": [
+      "Spanish",
+      "English",
+      "Audio",
+      "Notes"
+    ],
+    "csv_files": [
+      "vocabulary.csv",
+      "sentences.csv"
+    ]
+  },
+  "french": {
+    "name": "French",
+    "voice": "shimmer",
+    "instructions": "Speak naturally in standard French. Use clear pronunciation suitable for a beginner learning French.",
+    "model_name": "French Model",
+    "fields": [
+      "French",
+      "English",
+      "Audio",
+      "Notes"
+    ],
+    "csv_files": [
+      "vocabulary.csv",
+      "sentences.csv"
+    ]
+  }
+}
