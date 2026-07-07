@@ -329,6 +329,7 @@ CSV → create_flashcards.py → flashcards.db + MP3s → generate_apkg.py → .
 
 Future improvements include:
 
+- Integrate with FPT AI for southern vietnamese voice: https://docs.fpt.ai/docs/en/speech/api/text-to-speech.html
 - Web UI for CSV creation and management
 - Automatic subtitle download
 - Automatic vocabulary extraction
