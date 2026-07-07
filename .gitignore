@@ -217,9 +217,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Input files
+input/*
+
 # Generated files
-audio/*.mp3
-output/*.apkg
+audio/
+output/
+flashcards.db
 
 # IDE files
 .idea/

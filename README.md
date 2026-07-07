@@ -1,6 +1,6 @@
 # AI Flashcard Generator
 
-Generate Anki flashcards with high-quality AI-generated audio for multiple languages.
+Generate Anki flashcards with high-quality AI-generated audio for multiple languages using SQLite for persistent storage.
 
 Currently supports:
 - Vocabulary flashcards
@@ -8,6 +8,7 @@ Currently supports:
 - OpenAI Text-to-Speech
 - Anki `.apkg` generation
 - **Multi-language support** (Japanese, Spanish, French, and more)
+- **Database storage** (SQLite with auto-generated card IDs)
 
 ---
 
@@ -53,14 +54,10 @@ pip install -r requirements.txt
 
 ```
 languages.json                    (language configuration)
+flashcards.db                     (SQLite database - auto-created)
 
 input/
-  japanese/
-    vocabulary.csv
-    sentences.csv
-  spanish/
-    vocabulary.csv
-    sentences.csv
+  *.csv (your new flashcards for any language)
 
 audio/
   japanese/
@@ -70,8 +67,9 @@ output/
   japanese/
   spanish/
 
-generate_audio.py
-generate_apkg.py
+init_db.py                        (initialize database)
+create_flashcards.py              (import CSVs and generate audio)
+generate_apkg.py                  (create Anki deck from database)
 ```
 
 ---
@@ -89,14 +87,6 @@ Edit `languages.json` to add new languages or modify existing ones:
     "model_name": "Japanese Model",
     "fields": ["Japanese", "English", "Romaji", "Audio", "Notes"],
     "csv_files": ["vocabulary.csv", "sentences.csv"]
-  },
-  "spanish": {
-    "name": "Spanish",
-    "voice": "nova",
-    "instructions": "Speak naturally in standard Spanish...",
-    "model_name": "Spanish Model",
-    "fields": ["Spanish", "English", "Audio", "Notes"],
-    "csv_files": ["vocabulary.csv", "sentences.csv"]
   }
 }
 ```
@@ -107,19 +97,28 @@ Edit `languages.json` to add new languages or modify existing ones:
 - **instructions**: Instructions for the text-to-speech model
 - **model_name**: Name of the Anki model
 - **fields**: List of card fields (order matters!)
-- **csv_files**: CSV files to process for this language
+- **csv_files**: CSV file names to process for this language
 
 ---
 
 # Usage
 
-## Step 1 - Set up language folders
-
-Create language-specific input folders:
+## Step 0 - Initialize Database (First Time Only)
 
 ```
-mkdir input\japanese
-mkdir input\spanish
+python init_db.py
+```
+
+This creates `flashcards.db` with the schema.
+
+---
+
+## Step 1 - Prepare input folder
+
+Ensure the `input/` folder exists:
+
+```
+mkdir input
 ```
 
 ---
@@ -128,9 +127,7 @@ mkdir input\spanish
 
 Download subtitles from a YouTube video.
 
-For example:
-
-https://subtitle.to/
+For example: https://subtitle.to/
 
 Download them as **TXT**.
 
@@ -157,14 +154,14 @@ The first file should be named **vocabulary.csv**.
 Columns:
 
 ```
-ID,Japanese,English,Romaji
+Japanese,English,Romaji,Notes
 ```
 
 Example:
 
 ```
-JP000001,ハサミ,scissors,hasami
-JP000002,紙,paper,kami
+ハサミ,scissors,hasami,noun
+紙,paper,kami,noun
 ```
 
 The second file should be named **sentences.csv**.
@@ -172,14 +169,14 @@ The second file should be named **sentences.csv**.
 Columns:
 
 ```
-ID,Japanese,English,Romaji
+Japanese,English,Romaji
 ```
 
 Example:
 
 ```
-JS000001,これは何ですか。,What is this?,Kore wa nan desu ka?
-JS000002,わかりません。,I don't know.,Wakarimasen.
+これは何ですか。,What is this?,Kore wa nan desu ka?
+わかりません。,I don't know.,Wakarimasen.
 ```
 
 Guidelines:
@@ -194,69 +191,81 @@ Guidelines:
 
 ---
 
-### Prompt for Other Languages
+### Notes:
+- The first field (Japanese, Spanish, etc.) is used for audio generation
+- Other fields are stored as-is in the database
+- Optional: Add a "Notes" column for extra information
 
-Adapt the Japanese prompt for your target language. Ensure CSV column names match your language configuration in `languages.json`.
+---
 
-For example, for Spanish:
+## Step 4 - Copy CSV files to input folder
+
+Copy your CSV files to:
 
 ```
-ID,Spanish,English,Notes
+input/
+```
+
+Example:
+```
+input/vocabulary.csv
+input/sentences.csv
 ```
 
 ---
 
-## Step 4 - Copy the CSV files
+## Step 5 - Import flashcards and generate audio
 
-Copy
-
-```
-vocabulary.csv
-sentences.csv
-```
-
-into the appropriate language folder, e.g.:
+Run the import script with optional source tag:
 
 ```
-input\japanese\
+python create_flashcards.py --language japanese --source WV6BmI6d_HU
 ```
 
-or
+This will:
+1. Read all CSV files in `input/japanese/`
+2. Save each card to `flashcards.db` (auto-generates ID)
+3. Generate MP3 audio for each card
+4. Delete CSV files (only if all imports succeeded)
+5. Store audio files in `audio/japanese/`
 
-```
-input\spanish\
-```
+**Arguments:**
+- `--language` (required): Language to import (japanese, spanish, french, etc.)
+- `--source` (optional): Source identifier (e.g., YouTube video ID) - appears as tag in Anki
+- `--csv` (optional): Specific CSV file to import (if not provided, imports all CSVs)
 
----
+**Examples:**
 
-## Step 5 - Generate audio
+```bash
+# Import all CSVs in input/ with source tag
+python create_flashcards.py --language japanese --source WV6BmI6d_HU
 
-Run the audio generation script with the `--language` flag:
+# Import specific CSV
+python create_flashcards.py --language spanish --csv vocabulary.csv --source abc123
 
-```
-python generate_audio.py --language japanese
-```
-
-This generates MP3 files in:
-
-```
-audio/japanese/
+# Import without source tag
+python create_flashcards.py --language french
 ```
 
 ---
 
 ## Step 6 - Generate the Anki deck
 
-Run the deck generation script with the `--language` flag:
+Run the deck generation script:
 
 ```
 python generate_apkg.py --language japanese
 ```
 
-The generated deck will be written to:
+This will:
+1. Query all flashcards for Japanese from the database
+2. Build the Anki deck with audio files
+3. Create the `.apkg` file in `output/japanese/`
+
+The generated deck will be at:
 
 ```
-output/japanese/
+output/japanese/Japanese.apkg
 ```
 
 ---
@@ -265,15 +274,54 @@ output/japanese/
 
 Open Anki.
 
-Double-click the generated
+Double-click the generated `.apkg` file.
+
+The deck will automatically import with audio and source tags.
+
+---
+
+# Database Schema
+
+The `flashcards` table stores all flashcards:
+
+```sql
+CREATE TABLE flashcards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    language TEXT NOT NULL,
+    type TEXT NOT NULL,
+    target_language_text TEXT NOT NULL,
+    translation TEXT NOT NULL,
+    pronunciation TEXT,
+    source TEXT,
+    notes TEXT,
+    audio_filename TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+- **id**: Auto-generated unique ID for each card
+- **language**: Language code (japanese, spanish, etc.)
+- **type**: Card type from CSV filename (vocabulary, sentences, etc.)
+- **target_language_text**: Text in the target language (Japanese, Spanish, etc.)
+- **translation**: English translation
+- **pronunciation**: Pronunciation (Romaji, etc.)
+- **source**: Source identifier (YouTube ID, etc.) - becomes Anki tag
+- **notes**: Additional notes
+- **audio_filename**: Generated MP3 filename
+
+---
+
+# Workflow Summary
 
 ```
-.apkg
+CSV → create_flashcards.py → flashcards.db + MP3s → generate_apkg.py → .apkg → Anki
 ```
 
-file.
-
-The deck will automatically import with audio.
+1. Create CSV with minimum columns (target language, English, pronunciation)
+2. Run `create_flashcards.py` to store in DB and generate audio
+3. Run `generate_apkg.py` to create Anki deck from DB
+4. Import `.apkg` into Anki
 
 ---
 
@@ -281,10 +329,11 @@ The deck will automatically import with audio.
 
 Future improvements include:
 
+- Web UI for CSV creation and management
 - Automatic subtitle download
 - Automatic vocabulary extraction
 - Automatic translation
-- Automatic romanization
 - Duplicate detection
 - Incremental deck updates
-- Web UI for easier configuration
+- Card review tracking
+- Multi-field language support (e.g., multiple pronunciation styles)
