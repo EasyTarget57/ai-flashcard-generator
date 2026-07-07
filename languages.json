@@ -47,5 +47,21 @@
       "vocabulary.csv",
       "sentences.csv"
     ]
+  },
+  "vietnamese": {
+    "name": "Vietnamese",
+    "voice": "nova",
+    "instructions": "Speak naturally in southern Vietnamese (Saigon dialect). Use a clear southern accent and natural pacing. Do NOT include any romanization — speak the Vietnamese text exactly as written. Keep pronunciation clear for learners.",
+    "model_name": "Vietnamese Model",
+    "fields": [
+      "Vietnamese",
+      "English",
+      "Audio",
+      "Notes"
+    ],
+    "csv_files": [
+      "vocabulary.csv",
+      "sentences.csv"
+    ]
   }
 }
