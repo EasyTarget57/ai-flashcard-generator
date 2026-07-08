@@ -46,7 +46,7 @@ Python 3.11+ is recommended.
 ## 3. Install dependencies
 
 ```
-pip install openai genanki
+pip install openai genanki requests
 ```
 
 or
