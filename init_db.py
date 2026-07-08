@@ -24,6 +24,7 @@ def init_database():
         notes TEXT,
 
         audio_filename TEXT,
+        test BOOLEAN NOT NULL DEFAULT 0,
 
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -9,6 +9,7 @@ Currently supports:
 - Anki `.apkg` generation
 - **Multi-language support** (Japanese, Spanish, French, and more)
 - **Database storage** (SQLite with auto-generated card IDs)
+- **Test mode** (dry-run imports before production)
 
 ---
 
@@ -47,57 +48,6 @@ or
 ```
 pip install -r requirements.txt
 ```
-
----
-
-# Project Structure
-
-```
-languages.json                    (language configuration)
-flashcards.db                     (SQLite database - auto-created)
-
-input/
-  *.csv (your new flashcards for any language)
-
-audio/
-  japanese/
-  spanish/
-
-output/
-  japanese/
-  spanish/
-
-init_db.py                        (initialize database)
-create_flashcards.py              (import CSVs and generate audio)
-generate_apkg.py                  (create Anki deck from database)
-```
-
----
-
-# Configuration
-
-Edit `languages.json` to add new languages or modify existing ones:
-
-```json
-{
-  "japanese": {
-    "name": "Japanese",
-    "voice": "coral",
-    "instructions": "Speak naturally in standard Japanese...",
-    "model_name": "Japanese Model",
-    "fields": ["Japanese", "English", "Romaji", "Audio", "Notes"],
-    "csv_files": ["vocabulary.csv", "sentences.csv"]
-  }
-}
-```
-
-### Configuration Fields:
-- **name**: Display name for the deck
-- **voice**: OpenAI voice to use (coral, nova, shimmer, etc.)
-- **instructions**: Instructions for the text-to-speech model
-- **model_name**: Name of the Anki model
-- **fields**: List of card fields (order matters!)
-- **csv_files**: CSV file names to process for this language
 
 ---
 
@@ -216,14 +166,31 @@ input/sentences.csv
 
 ## Step 5 - Import flashcards and generate audio
 
-Run the import script with optional source tag:
+### Test mode (recommended first step)
+
+Test your CSV and audio generation before importing into production:
 
 ```
-python create_flashcards.py --language japanese --source WV6BmI6d_HU
+python create_flashcards.py --language japanese --csv sentences.csv --test
 ```
 
 This will:
-1. Read all CSV files in `input/japanese/`
+1. Import cards and generate audio marked as test entries
+2. Keep the CSV file for later production import
+3. Allow you to verify quality before committing
+
+---
+
+### Production import
+
+Once you're satisfied with the test deck, run the same import without `--test`:
+
+```
+python create_flashcards.py --language japanese --csv sentences.csv --source WV6BmI6d_HU
+```
+
+This will:
+1. Read CSV files from `input/`
 2. Save each card to `flashcards.db` (auto-generates ID)
 3. Generate MP3 audio for each card
 4. Delete CSV files (only if all imports succeeded)
@@ -233,11 +200,21 @@ This will:
 - `--language` (required): Language to import (japanese, spanish, french, etc.)
 - `--source` (optional): Source identifier (e.g., YouTube video ID) - appears as tag in Anki
 - `--csv` (optional): Specific CSV file to import (if not provided, imports all CSVs)
+- `--test` (optional): Mark entries as test for dry-run verification
 
 **Examples:**
 
 ```bash
-# Import all CSVs in input/ with source tag
+# Test import first
+python create_flashcards.py --language japanese --csv sentences.csv --test
+
+# Generate test deck to verify
+python generate_apkg.py --language japanese --test
+
+# Once satisfied, import for production
+python create_flashcards.py --language japanese --source WV6BmI6d_HU
+
+# Import all CSVs in input/
 python create_flashcards.py --language japanese --source WV6BmI6d_HU
 
 # Import specific CSV
@@ -268,6 +245,12 @@ The generated deck will be at:
 output/japanese/Japanese.apkg
 ```
 
+**Arguments:**
+- `--language` (required): Language to generate deck for
+- `--test` (optional): Generate test deck and clean up test entries after creation
+
+When using `--test`, the deck name will have a `-test` suffix (e.g., `Japanese-test.apkg`). After generation, you'll be prompted to confirm deletion of all test entries and their audio files.
+
 ---
 
 ## Step 7 - Import into Anki
@@ -277,6 +260,57 @@ Open Anki.
 Double-click the generated `.apkg` file.
 
 The deck will automatically import with audio and source tags.
+
+---
+
+# Project Structure
+
+```
+languages.json                    (language configuration)
+flashcards.db                     (SQLite database - auto-created)
+
+input/
+  *.csv (your new flashcards for any language)
+
+audio/
+  japanese/
+  spanish/
+
+output/
+  japanese/
+  spanish/
+
+init_db.py                        (initialize database)
+create_flashcards.py              (import CSVs and generate audio)
+generate_apkg.py                  (create Anki deck from database)
+```
+
+---
+
+# Configuration
+
+Edit `languages.json` to add new languages or modify existing ones:
+
+```json
+{
+  "japanese": {
+    "name": "Japanese",
+    "voice": "coral",
+    "instructions": "Speak naturally in standard Japanese...",
+    "model_name": "Japanese Model",
+    "fields": ["Japanese", "English", "Romaji", "Audio", "Notes"],
+    "csv_files": ["vocabulary.csv", "sentences.csv"]
+  }
+}
+```
+
+### Configuration Fields:
+- **name**: Display name for the deck
+- **voice**: OpenAI voice to use (coral, nova, shimmer, etc.)
+- **instructions**: Instructions for the text-to-speech model
+- **model_name**: Name of the Anki model
+- **fields**: List of card fields (order matters!)
+- **csv_files**: CSV file names to process for this language
 
 ---
 
@@ -295,6 +329,7 @@ CREATE TABLE flashcards (
     source TEXT,
     notes TEXT,
     audio_filename TEXT,
+    test BOOLEAN NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -309,19 +344,25 @@ CREATE TABLE flashcards (
 - **source**: Source identifier (YouTube ID, etc.) - becomes Anki tag
 - **notes**: Additional notes
 - **audio_filename**: Generated MP3 filename
+- **test**: Boolean flag (0 = production, 1 = test entry)
 
 ---
 
 # Workflow Summary
 
 ```
+CSV → create_flashcards.py (--test) → flashcards.db + MP3s → generate_apkg.py (--test) → .apkg → Anki (verify)
+         ↓ (if satisfied)
 CSV → create_flashcards.py → flashcards.db + MP3s → generate_apkg.py → .apkg → Anki
 ```
 
-1. Create CSV with minimum columns (target language, English, pronunciation)
-2. Run `create_flashcards.py` to store in DB and generate audio
-3. Run `generate_apkg.py` to create Anki deck from DB
-4. Import `.apkg` into Anki
+**Recommended workflow:**
+1. Create CSV with target language, translation, and optional fields
+2. Run `create_flashcards.py --test` to generate test entries with audio
+3. Run `generate_apkg.py --test` to create test deck and verify quality
+4. If satisfied, run `create_flashcards.py` (without --test) to import for production
+5. Run `generate_apkg.py` to create production deck
+6. Import `.apkg` into Anki
 
 ---
 

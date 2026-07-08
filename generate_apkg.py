@@ -18,9 +18,15 @@ parser.add_argument(
     required=True,
     help=f"Language to generate deck for. Available: {', '.join(LANGUAGES_CONFIG.keys())}"
 )
+parser.add_argument(
+    "--test",
+    action="store_true",
+    help="Generate test deck and clean up test entries after creation"
+)
 args = parser.parse_args()
 
 LANGUAGE = args.language.lower()
+TEST_MODE = args.test
 if LANGUAGE not in LANGUAGES_CONFIG:
     print(f"Error: Language '{LANGUAGE}' not found in languages.json")
     print(f"Available languages: {', '.join(LANGUAGES_CONFIG.keys())}")
@@ -35,6 +41,8 @@ DB_FILE = Path("flashcards.db")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 DECK_NAME = LANG_CONFIG["name"]
+if TEST_MODE:
+    DECK_NAME = f"{DECK_NAME}-test"
 MODEL_NAME = LANG_CONFIG["model_name"]
 FIELDS = LANG_CONFIG["fields"]
 
@@ -167,6 +175,9 @@ def add_flashcard_from_db(row):
                 field_values.append(row["target_language_text"] or "")
             elif field == "English":
                 field_values.append(row["translation"] or "")
+            elif field == "Translation":
+                # Generic translation field for any target language
+                field_values.append(row["translation"] or "")
             elif field in ("Romaji", "Pronunciation"):
                 field_values.append(row["pronunciation"] or "")
             else:
@@ -194,10 +205,16 @@ def main():
     cursor = conn.cursor()
 
     # Query flashcards for this language, ordered by type and id
-    cursor.execute(
-        "SELECT * FROM flashcards WHERE language = ? ORDER BY type, id",
-        (LANGUAGE,)
-    )
+    if TEST_MODE:
+        cursor.execute(
+            "SELECT * FROM flashcards WHERE language = ? AND test = 1 ORDER BY type, id",
+            (LANGUAGE,)
+        )
+    else:
+        cursor.execute(
+            "SELECT * FROM flashcards WHERE language = ? AND test = 0 ORDER BY type, id",
+            (LANGUAGE,)
+        )
 
     rows = cursor.fetchall()
     conn.close()
@@ -226,6 +243,47 @@ def main():
     print(f"Created {output}")
     print(f"{len(rows)} cards")
     print(f"{len(media_files)} audio files")
+
+    # Clean up test entries if in test mode
+    if TEST_MODE:
+        print()
+        print(f"WARNING: About to delete all {len(rows)} test entries for '{LANGUAGE}' and their audio files.")
+        print("This cannot be undone.")
+        response = input("Continue? (y/n): ").strip().lower()
+        
+        if response == "y":
+            conn = sqlite3.connect(str(DB_FILE))
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Get audio filenames before deletion
+            cursor.execute(
+                "SELECT audio_filename FROM flashcards WHERE language = ? AND test = 1",
+                (LANGUAGE,)
+            )
+            audio_files = cursor.fetchall()
+            
+            # Delete test entries
+            cursor.execute(
+                "DELETE FROM flashcards WHERE language = ? AND test = 1",
+                (LANGUAGE,)
+            )
+            conn.commit()
+            conn.close()
+            
+            # Delete audio files
+            deleted_audio = 0
+            for row in audio_files:
+                if row["audio_filename"]:
+                    audio_path = AUDIO_DIR / row["audio_filename"]
+                    if audio_path.exists():
+                        audio_path.unlink()
+                        deleted_audio += 1
+            
+            print(f"Deleted {len(audio_files)} test entries")
+            print(f"Deleted {deleted_audio} audio files")
+        else:
+            print("Cleanup cancelled. Test entries remain in database.")
 
 
 if __name__ == "__main__":

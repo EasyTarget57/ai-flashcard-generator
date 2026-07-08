@@ -63,5 +63,21 @@
       "vocabulary.csv",
       "sentences.csv"
     ]
+  },
+  "english": {
+    "name": "English",
+    "voice": "alloy",
+    "instructions": "Speak naturally in standard English. Use clear pronunciation suitable for language learners.",
+    "model_name": "English Model",
+    "fields": [
+      "English",
+      "Translation",
+      "Audio",
+      "Notes"
+    ],
+    "csv_files": [
+      "vocabulary.csv",
+      "sentences.csv"
+    ]
   }
 }

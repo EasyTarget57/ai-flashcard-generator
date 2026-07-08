@@ -25,11 +25,17 @@ parser.add_argument(
     "--csv",
     help="Specific CSV file to import. If not provided, imports all CSVs in input/{language}/"
 )
+parser.add_argument(
+    "--test",
+    action="store_true",
+    help="Mark flashcards as test entries (creates test deck for dry-run)"
+)
 args = parser.parse_args()
 
 LANGUAGE = args.language.lower()
 SOURCE = args.source
 CUSTOM_CSV = args.csv
+TEST_MODE = args.test
 
 # Validate language
 if LANGUAGE not in LANGUAGES_CONFIG:
@@ -72,6 +78,7 @@ MODEL = "gpt-4o-mini-tts"
 VOICE = LANG_CONFIG["voice"]
 INSTRUCTIONS = LANG_CONFIG["instructions"]
 TARGET_FIELD = LANG_CONFIG["fields"][0]  # First field is the target language
+TRANSLATION_FIELD = LANG_CONFIG["fields"][1]  # Second field is the translation
 
 
 def generate_audio(text: str, audio_id: int) -> str:
@@ -107,7 +114,7 @@ def import_csv(csv_file: Path):
         for row in reader:
             try:
                 target_text = row.get(TARGET_FIELD, "").strip()
-                translation = row.get("English", "").strip() if "English" in row else row.get(list(row.keys())[1], "").strip()
+                translation = row.get(TRANSLATION_FIELD, "").strip()
                 pronunciation = row.get("Romaji", "").strip() if "Romaji" in row else None
                 notes = row.get("Notes", "").strip() if "Notes" in row else None
 
@@ -118,9 +125,9 @@ def import_csv(csv_file: Path):
                 # Insert into database
                 cursor.execute("""
                     INSERT INTO flashcards
-                    (language, type, target_language_text, translation, pronunciation, source, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (LANGUAGE, csv_type, target_text, translation, pronunciation, SOURCE, notes))
+                    (language, type, target_language_text, translation, pronunciation, source, notes, test)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (LANGUAGE, csv_type, target_text, translation, pronunciation, SOURCE, notes, TEST_MODE))
 
                 conn.commit()
 
@@ -151,10 +158,12 @@ def import_csv(csv_file: Path):
     if failed_count > 0:
         print(f"Failed: {failed_count} cards")
 
-    # Delete CSV file if import was successful
-    if imported_count > 0 and failed_count == 0:
+    # Delete CSV file if import was successful (skip in test mode)
+    if imported_count > 0 and failed_count == 0 and not TEST_MODE:
         csv_file.unlink()
         print(f"Deleted: {csv_file.name}")
+    elif TEST_MODE:
+        print(f"Test mode: Kept {csv_file.name} for potential production import")
 
     return imported_count, failed_count
 
