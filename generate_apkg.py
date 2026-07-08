@@ -2,7 +2,7 @@ import sqlite3
 import json
 import sys
 import argparse
-import random
+import hashlib
 from pathlib import Path
 
 import genanki
@@ -57,6 +57,12 @@ if not DB_FILE.exists():
 # Build model fields from config
 field_list = [{"name": field} for field in FIELDS]
 
+
+def stable_numeric_id(kind, language):
+    """Return a stable positive ID suitable for an Anki model or deck."""
+    value = f"flashcard-generator:{kind}:{language}".encode("utf-8")
+    return int.from_bytes(hashlib.sha256(value).digest()[:4], "big") & ((1 << 30) - 1)
+
 # Build question format - show audio and Front field
 qfmt = """
 {{Audio}}
@@ -80,7 +86,7 @@ afmt = """
 """
 
 MODEL = genanki.Model(
-    random.randrange(1 << 30),
+    stable_numeric_id("model", LANGUAGE),
     MODEL_NAME,
     fields=field_list,
     templates=[
@@ -131,7 +137,7 @@ MODEL = genanki.Model(
 
 # Create deck
 deck = genanki.Deck(
-    random.randrange(1 << 30),
+    stable_numeric_id("deck", LANGUAGE),
     DECK_NAME
 )
 
@@ -175,7 +181,10 @@ def add_flashcard_from_db(row):
     note = genanki.Note(
         model=MODEL,
         fields=field_values,
-        tags=tags
+        tags=tags,
+        # The database row is the identity. Field and audio changes must not
+        # create a second Anki note on later imports.
+        guid=genanki.guid_for("flashcard-generator", LANGUAGE, str(row["id"])),
     )
 
     deck.add_note(note)

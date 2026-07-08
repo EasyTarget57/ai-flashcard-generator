@@ -1,0 +1,37 @@
+
+curl -X POST https://mkp-api.fptcloud.com/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-api-key" \
+  -d '{
+    "model": "FPT.AI-VITs",
+    "input": "xin chào, chúng tôi là FPT",
+    "response_format": "wav",
+    "voice": "std_kimngan"
+}'
+
+FPT.AI VITs - High-Quality Vietnamese Text-to-Speech Voices
+FPT.AI VITs offers a collection of 9 high-quality Vietnamese voices, including:
+
+5 female voices
+4 male voices
+These voices feature both Northern and Southern regional accents.
+
+Developed using studio recordings of professional voice talents, these voices are optimized for applications such as:
+
+📰 News reading
+📢 Public address (PA) announcements
+All voices achieve a minimum Mean Opinion Score (MOS) of 4 out of 5, reflecting their naturalness and clarity.
+
+Benchmark
+Word Error Rate (WER): < 0.1%
+Mean Opinion Score (MOS):
+Voice Name	ID	Gender	Accent	Mean Opinion Score (MOS)
+Le Minh	std_leminh	Male	North	-
+Kim Ngan	std_kimngan	Female	South	4.5
+Ban Mai	std_banmai	Female	North	4.5
+Ha Tieu Mai	std_hatieumai	Female	South	-
+Ngoc Lam	std_ngoclam	Female	Center	4.2
+Thu Minh	std_thuminh	Female	North	4.2
+Gia Huy	std_giahuy	Male	South	-
+Huy Phong	std_huyphong	Male	North	4.2
+Minh Quan	std_minhquan	Male	North	4.2

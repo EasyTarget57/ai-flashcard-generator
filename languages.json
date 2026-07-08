@@ -1,7 +1,8 @@
 {
   "japanese": {
     "name": "Japanese",
-    "voice": "coral",
+    "tts_provider": "openai",
+    "tts_voice": "coral",
     "instructions": "Speak naturally in standard Japanese. Use clear pronunciation suitable for a beginner learning Japanese.",
     "model_name": "Japanese Model",
     "csv_files": [
@@ -11,7 +12,8 @@
   },
   "spanish": {
     "name": "Spanish",
-    "voice": "nova",
+    "tts_provider": "openai",
+    "tts_voice": "nova",
     "instructions": "Speak naturally in standard Spanish. Use clear pronunciation suitable for a beginner learning Spanish.",
     "model_name": "Spanish Model",
     "csv_files": [
@@ -21,7 +23,8 @@
   },
   "french": {
     "name": "French",
-    "voice": "shimmer",
+    "tts_provider": "openai",
+    "tts_voice": "shimmer",
     "instructions": "Speak naturally in standard French. Use clear pronunciation suitable for a beginner learning French.",
     "model_name": "French Model",
     "csv_files": [
@@ -31,7 +34,9 @@
   },
   "vietnamese": {
     "name": "Vietnamese",
-    "voice": "nova",
+    "tts_provider": "fptai",
+    "tts_voice": "std_hatieumai",
+    "tts_speed": 0.85,
     "instructions": "Speak naturally in southern Vietnamese (Saigon dialect). Use a clear southern accent and natural pacing. Keep pronunciation clear for learners.",
     "model_name": "Vietnamese Model",
     "csv_files": [
@@ -41,7 +46,8 @@
   },
   "english": {
     "name": "English",
-    "voice": "alloy",
+    "tts_provider": "openai",
+    "tts_voice": "alloy",
     "instructions": "Speak naturally in standard English. Use clear pronunciation suitable for language learners.",
     "model_name": "English Model",
     "csv_files": [

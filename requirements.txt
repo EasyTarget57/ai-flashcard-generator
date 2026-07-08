@@ -1,2 +1,3 @@
 openai>=1.99.0
 genanki>=0.13.1
+requests>=2.31.0

@@ -4,7 +4,7 @@ import sys
 import argparse
 import json
 from pathlib import Path
-from openai import OpenAI
+from lib.tts_providers import get_tts_provider
 
 # Load languages configuration
 with open("languages.json", "r", encoding="utf-8") as f:
@@ -72,27 +72,21 @@ if not csv_files:
     print(f"Error: No CSV files found in {INPUT_DIR}")
     sys.exit(1)
 
-# Initialize OpenAI client
-client = OpenAI()
-MODEL = "gpt-4o-mini-tts"
-VOICE = LANG_CONFIG["voice"]
-INSTRUCTIONS = LANG_CONFIG["instructions"]
+# Initialize TTS provider
+provider_name = LANG_CONFIG.get("tts_provider", "openai")
+try:
+    tts_provider = get_tts_provider(provider_name, LANG_CONFIG)
+except Exception as e:
+    print(f"Error: Failed to initialize TTS provider: {e}")
+    sys.exit(1)
 
 
 def generate_audio(text: str, audio_id: int) -> str:
     """Generate MP3 file for a flashcard and return filename."""
-    filename = f"{audio_id}.mp3"
-    filepath = AUDIO_DIR / filename
-
-    with client.audio.speech.with_streaming_response.create(
-        model=MODEL,
-        voice=VOICE,
-        input=text,
-        instructions=INSTRUCTIONS,
-    ) as response:
-        response.stream_to_file(str(filepath))
-
-    return filename
+    try:
+        return tts_provider.generate_audio(text, audio_id, AUDIO_DIR)
+    except Exception as e:
+        raise Exception(f"Audio generation failed: {e}")
 
 
 def import_csv(csv_file: Path):
