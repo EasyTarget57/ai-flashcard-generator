@@ -5,7 +5,7 @@ Generate Anki flashcards with high-quality AI-generated audio for multiple langu
 Currently supports:
 - Vocabulary flashcards
 - Sentence flashcards
-- OpenAI Text-to-Speech
+- OpenAI and FPT.AI Text-to-Speech
 - Anki `.apkg` generation
 - **Multi-language support** (Japanese, Spanish, French, and more)
 - **Database storage** (SQLite with auto-generated card IDs)
@@ -15,18 +15,24 @@ Currently supports:
 
 # Requirements
 
-## 1. OpenAI API Key
+## 1. API Keys
 
-Create an OpenAI API key and set it as an environment variable:
+### OpenAI
+
+OpenAI-backed languages require an OpenAI API key in the following environment variable:
 
 ```
 OPENAI_API_KEY
 ```
 
-On Windows:
+### Vietnamese (FPT.AI)
+
+Vietnamese audio uses FPT.AI. Copy your API key from the
+[FPT Marketplace API Keys page](https://marketplace.fptcloud.com/en/my-account?tab=my-api-key)
+and set it as the following environment variable:
 
 ```
-OPENAI_API_KEY=sk-proj-...
+FPTAI_API_KEY
 ```
 
 ---
