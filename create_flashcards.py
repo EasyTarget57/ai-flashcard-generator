@@ -77,8 +77,6 @@ client = OpenAI()
 MODEL = "gpt-4o-mini-tts"
 VOICE = LANG_CONFIG["voice"]
 INSTRUCTIONS = LANG_CONFIG["instructions"]
-TARGET_FIELD = LANG_CONFIG["fields"][0]  # First field is the target language
-TRANSLATION_FIELD = LANG_CONFIG["fields"][1]  # Second field is the translation
 
 
 def generate_audio(text: str, audio_id: int) -> str:
@@ -113,13 +111,14 @@ def import_csv(csv_file: Path):
 
         for row in reader:
             try:
-                target_text = row.get(TARGET_FIELD, "").strip()
-                translation = row.get(TRANSLATION_FIELD, "").strip()
-                pronunciation = row.get("Romaji", "").strip() if "Romaji" in row else None
+                # Use standardized column names
+                target_text = row.get("Front", "").strip()
+                translation = row.get("Back", "").strip()
+                pronunciation = row.get("Pronunciation", "").strip() if "Pronunciation" in row else None
                 notes = row.get("Notes", "").strip() if "Notes" in row else None
 
                 if not target_text or not translation:
-                    print(f"  SKIP: Missing target_text or translation")
+                    print(f"  SKIP: Missing Front or Back")
                     continue
 
                 # Insert into database

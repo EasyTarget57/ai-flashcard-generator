@@ -4,13 +4,6 @@
     "voice": "coral",
     "instructions": "Speak naturally in standard Japanese. Use clear pronunciation suitable for a beginner learning Japanese.",
     "model_name": "Japanese Model",
-    "fields": [
-      "Japanese",
-      "English",
-      "Romaji",
-      "Audio",
-      "Notes"
-    ],
     "csv_files": [
       "vocabulary.csv",
       "sentences.csv"
@@ -21,12 +14,6 @@
     "voice": "nova",
     "instructions": "Speak naturally in standard Spanish. Use clear pronunciation suitable for a beginner learning Spanish.",
     "model_name": "Spanish Model",
-    "fields": [
-      "Spanish",
-      "English",
-      "Audio",
-      "Notes"
-    ],
     "csv_files": [
       "vocabulary.csv",
       "sentences.csv"
@@ -37,12 +24,6 @@
     "voice": "shimmer",
     "instructions": "Speak naturally in standard French. Use clear pronunciation suitable for a beginner learning French.",
     "model_name": "French Model",
-    "fields": [
-      "French",
-      "English",
-      "Audio",
-      "Notes"
-    ],
     "csv_files": [
       "vocabulary.csv",
       "sentences.csv"
@@ -53,12 +34,6 @@
     "voice": "nova",
     "instructions": "Speak naturally in southern Vietnamese (Saigon dialect). Use a clear southern accent and natural pacing. Keep pronunciation clear for learners.",
     "model_name": "Vietnamese Model",
-    "fields": [
-      "Vietnamese",
-      "English",
-      "Audio",
-      "Notes"
-    ],
     "csv_files": [
       "vocabulary.csv",
       "sentences.csv"
@@ -69,12 +44,6 @@
     "voice": "alloy",
     "instructions": "Speak naturally in standard English. Use clear pronunciation suitable for language learners.",
     "model_name": "English Model",
-    "fields": [
-      "English",
-      "Translation",
-      "Audio",
-      "Notes"
-    ],
     "csv_files": [
       "vocabulary.csv",
       "sentences.csv"

@@ -44,7 +44,9 @@ DECK_NAME = LANG_CONFIG["name"]
 if TEST_MODE:
     DECK_NAME = f"{DECK_NAME}-test"
 MODEL_NAME = LANG_CONFIG["model_name"]
-FIELDS = LANG_CONFIG["fields"]
+
+# Standardized field names
+FIELDS = ["Audio", "Front", "Back", "Pronunciation", "Notes"]
 
 # Verify database exists
 if not DB_FILE.exists():
@@ -55,12 +57,12 @@ if not DB_FILE.exists():
 # Build model fields from config
 field_list = [{"name": field} for field in FIELDS]
 
-# Build question format - show audio and first field
-qfmt = f"""
-{{{{Audio}}}}
+# Build question format - show audio and Front field
+qfmt = """
+{{Audio}}
 
 <div class="target">
-{{{{{FIELDS[0]}}}}}
+{{Front}}
 </div>
 """
 
@@ -71,12 +73,9 @@ afmt = """
 <hr id="answer">
 
 <div class="translations">
-"""
-for field in FIELDS[1:]:
-    if field != "Audio":
-        afmt += f'<div class="{field.lower().replace(" ", "_")}">\n{{{{{field}}}}}\n</div>\n'
-
-afmt += """
+<div class="back">{{Back}}</div>
+{{#Pronunciation}}<div class="pronunciation">{{Pronunciation}}</div>{{/Pronunciation}}
+{{#Notes}}<div class="notes">{{Notes}}</div>{{/Notes}}
 </div>
 """
 
@@ -112,24 +111,14 @@ MODEL = genanki.Model(
     margin: 10px 0;
 }
 
-.english {
+.back {
     font-weight: bold;
     color: #333;
 }
 
-.romaji {
+.pronunciation {
     color: gray;
     font-size: 18px;
-}
-
-.spanish {
-    font-weight: bold;
-    color: #333;
-}
-
-.french {
-    font-weight: bold;
-    color: #333;
 }
 
 .notes {
@@ -167,21 +156,16 @@ def add_flashcard_from_db(row):
                     field_values.append("")
             else:
                 field_values.append("")
+        elif field == "Front":
+            field_values.append(row["target_language_text"] or "")
+        elif field == "Back":
+            field_values.append(row["translation"] or "")
+        elif field == "Pronunciation":
+            field_values.append(row["pronunciation"] or "")
         elif field == "Notes":
             field_values.append(row["notes"] or "")
         else:
-            # Map database fields to card fields
-            if field == FIELDS[0]:  # Target language field
-                field_values.append(row["target_language_text"] or "")
-            elif field == "English":
-                field_values.append(row["translation"] or "")
-            elif field == "Translation":
-                # Generic translation field for any target language
-                field_values.append(row["translation"] or "")
-            elif field in ("Romaji", "Pronunciation"):
-                field_values.append(row["pronunciation"] or "")
-            else:
-                field_values.append("")
+            field_values.append("")
 
     # Build tags from source
     tags = []

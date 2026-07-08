@@ -89,44 +89,53 @@ Use ChatGPT (or another LLM) with the following prompt.
 
 ---
 
-### Prompt for Japanese
+### Prompt Template
 
-You are creating flashcards for a complete beginner learning Japanese.
+You are creating flashcards for a complete beginner learning [Language].
 
 Given the following transcript:
 
 1. Extract the most useful beginner vocabulary.
 2. Ignore filler words and excessive repetition.
-3. Create two CSV files.
+3. Create two CSV files with standardized columns.
 
-The first file should be named **vocabulary.csv**.
+**Vocabulary CSV** (`vocabulary.csv`):
 
 Columns:
-
 ```
-Japanese,English,Romaji,Notes
+Front,Back,Pronunciation,Notes
 ```
 
-Example:
-
+Example for Japanese:
 ```
 ハサミ,scissors,hasami,noun
 紙,paper,kami,noun
 ```
 
-The second file should be named **sentences.csv**.
+Example for Vietnamese (no pronunciation):
+```
+Front,Back,Notes
+cái kéo,scissors,noun
+tờ giấy,paper,noun
+```
+
+**Sentences CSV** (`sentences.csv`):
 
 Columns:
-
 ```
-Japanese,English,Romaji
+Front,Back,Pronunciation
 ```
 
-Example:
-
+Example for Japanese:
 ```
 これは何ですか。,What is this?,Kore wa nan desu ka?
 わかりません。,I don't know.,Wakarimasen.
+```
+
+Example for Spanish (no pronunciation):
+```
+¿Qué es esto?,What is this?
+No sé.,I don't know.
 ```
 
 Guidelines:
@@ -135,16 +144,19 @@ Guidelines:
 - Keep approximately 15–30 vocabulary cards.
 - Keep approximately 15–30 sentence cards.
 - Remove duplicate sentences.
-- Preserve natural Japanese.
-- Use standard Hepburn romaji.
+- Preserve natural language.
+- **Front**: Target language text (required)
+- **Back**: English translation (required)
+- **Pronunciation**: Optional (Romaji for Japanese, IPA for other languages, omit if not applicable)
+- **Notes**: Optional metadata (e.g., noun, verb, context)
 - Return valid CSV only.
 
 ---
 
 ### Notes:
-- The first field (Japanese, Spanish, etc.) is used for audio generation
-- Other fields are stored as-is in the database
-- Optional: Add a "Notes" column for extra information
+- **Front** column is used for audio generation
+- **Back**, **Pronunciation**, and **Notes** columns are stored as-is in the database
+- **Pronunciation** and **Notes** are optional columns (omit if not applicable)
 
 ---
 
@@ -298,7 +310,6 @@ Edit `languages.json` to add new languages or modify existing ones:
     "voice": "coral",
     "instructions": "Speak naturally in standard Japanese...",
     "model_name": "Japanese Model",
-    "fields": ["Japanese", "English", "Romaji", "Audio", "Notes"],
     "csv_files": ["vocabulary.csv", "sentences.csv"]
   }
 }
@@ -309,8 +320,14 @@ Edit `languages.json` to add new languages or modify existing ones:
 - **voice**: OpenAI voice to use (coral, nova, shimmer, etc.)
 - **instructions**: Instructions for the text-to-speech model
 - **model_name**: Name of the Anki model
-- **fields**: List of card fields (order matters!)
 - **csv_files**: CSV file names to process for this language
+
+### CSV Format:
+All CSV files use standardized columns:
+- **Front** (required): Text in target language
+- **Back** (required): English translation
+- **Pronunciation** (optional): Romanization or IPA
+- **Notes** (optional): Additional information
 
 ---
 
