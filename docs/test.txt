@@ -1,0 +1,2 @@
+Playground: We can use that to test different speakers/speeds:
+https://marketplace.fptcloud.com/en/playground?model=FPT.AI-VITs
