@@ -31,6 +31,11 @@ def init_database():
     );
     """)
 
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_flashcards_language_target_text
+    ON flashcards (language, target_language_text);
+    """)
+
     conn.commit()
     conn.close()
     print(f"Database initialized: {DB_FILE}")

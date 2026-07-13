@@ -209,10 +209,11 @@ python create_flashcards.py --language japanese --csv sentences.csv --source WV6
 
 This will:
 1. Read CSV files from `input/`
-2. Save each card to `flashcards.db` (auto-generates ID)
-3. Generate MP3 audio for each card
-4. Delete CSV files (only if all imports succeeded)
-5. Store audio files in `audio/japanese/`
+2. Skip rows whose **Front** exactly matches an existing card in the same language
+3. Save each new card to `flashcards.db` (auto-generates ID)
+4. Generate MP3 audio for each new card
+5. Delete CSV files (only if all imports succeeded)
+6. Store audio files in `audio/japanese/`
 
 **Arguments:**
 - `--language` (required): Language to import (japanese, spanish, french, etc.)

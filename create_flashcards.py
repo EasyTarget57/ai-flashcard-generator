@@ -89,65 +89,116 @@ def generate_audio(text: str, audio_id: int) -> str:
         raise Exception(f"Audio generation failed: {e}")
 
 
+def ensure_indexes(cursor: sqlite3.Cursor) -> None:
+    """Create indexes needed by import-time lookups."""
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_flashcards_language_target_text
+        ON flashcards (language, target_language_text)
+    """)
+
+
+def load_existing_fronts(cursor: sqlite3.Cursor, target_texts: set[str]) -> set[str]:
+    """Load existing front text matching incoming rows for the selected language."""
+    if not target_texts:
+        return set()
+
+    existing_fronts = set()
+    text_list = list(target_texts)
+    chunk_size = 900
+
+    for i in range(0, len(text_list), chunk_size):
+        chunk = text_list[i:i + chunk_size]
+        placeholders = ",".join("?" for _ in chunk)
+        cursor.execute(
+            f"""
+            SELECT target_language_text
+            FROM flashcards
+            WHERE language = ?
+              AND target_language_text IN ({placeholders})
+            """,
+            (LANGUAGE, *chunk)
+        )
+        existing_fronts.update(row[0] for row in cursor.fetchall())
+
+    return existing_fronts
+
+
 def import_csv(csv_file: Path):
     """Import CSV file into database and generate audio."""
     csv_type = csv_file.stem  # filename without extension
 
     print(f"\nProcessing {csv_file.name}...")
     imported_count = 0
+    skipped_count = 0
     failed_count = 0
 
     conn = sqlite3.connect(str(DB_FILE))
     cursor = conn.cursor()
+    ensure_indexes(cursor)
+    conn.commit()
 
     with csv_file.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
+        rows = list(reader)
 
-        for row in reader:
-            try:
-                # Use standardized column names
-                target_text = row.get("Front", "").strip()
-                translation = row.get("Back", "").strip()
-                pronunciation = row.get("Pronunciation", "").strip() if "Pronunciation" in row else None
-                notes = row.get("Notes", "").strip() if "Notes" in row else None
+    incoming_fronts = {row.get("Front", "").strip() for row in rows}
+    incoming_fronts.discard("")
+    existing_fronts = load_existing_fronts(cursor, incoming_fronts)
 
-                if not target_text or not translation:
-                    print(f"  SKIP: Missing Front or Back")
-                    continue
+    for row in rows:
+        try:
+            # Use standardized column names
+            target_text = row.get("Front", "").strip()
+            translation = row.get("Back", "").strip()
+            pronunciation = row.get("Pronunciation", "").strip() if "Pronunciation" in row else None
+            notes = row.get("Notes", "").strip() if "Notes" in row else None
 
-                # Insert into database
-                cursor.execute("""
-                    INSERT INTO flashcards
-                    (language, type, target_language_text, translation, pronunciation, source, notes, test)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (LANGUAGE, csv_type, target_text, translation, pronunciation, SOURCE, notes, TEST_MODE))
-
-                conn.commit()
-
-                # Get the auto-generated ID
-                flashcard_id = cursor.lastrowid
-
-                # Generate audio
-                print(f"  GEN  ID:{flashcard_id}  {target_text}")
-                audio_filename = generate_audio(target_text, flashcard_id)
-
-                # Update database with audio filename
-                cursor.execute(
-                    "UPDATE flashcards SET audio_filename = ? WHERE id = ?",
-                    (audio_filename, flashcard_id)
-                )
-                conn.commit()
-
-                imported_count += 1
-
-            except Exception as e:
-                print(f"  ERROR: {e}")
-                failed_count += 1
+            if not target_text or not translation:
+                print(f"  SKIP: Missing Front or Back")
+                skipped_count += 1
                 continue
+
+            if target_text in existing_fronts:
+                print(f"  SKIP: Duplicate Front for {LANGUAGE}: {target_text}")
+                skipped_count += 1
+                continue
+
+            # Insert into database
+            cursor.execute("""
+                INSERT INTO flashcards
+                (language, type, target_language_text, translation, pronunciation, source, notes, test)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (LANGUAGE, csv_type, target_text, translation, pronunciation, SOURCE, notes, TEST_MODE))
+
+            conn.commit()
+
+            # Get the auto-generated ID
+            flashcard_id = cursor.lastrowid
+
+            # Generate audio
+            print(f"  GEN  ID:{flashcard_id}  {target_text}")
+            audio_filename = generate_audio(target_text, flashcard_id)
+
+            # Update database with audio filename
+            cursor.execute(
+                "UPDATE flashcards SET audio_filename = ? WHERE id = ?",
+                (audio_filename, flashcard_id)
+            )
+            conn.commit()
+
+            imported_count += 1
+            existing_fronts.add(target_text)
+
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            failed_count += 1
+            continue
 
     conn.close()
 
     print(f"\nImported: {imported_count} cards")
+    if skipped_count > 0:
+        print(f"Skipped: {skipped_count} cards")
     if failed_count > 0:
         print(f"Failed: {failed_count} cards")
 
