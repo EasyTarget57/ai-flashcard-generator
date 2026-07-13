@@ -52,7 +52,7 @@ Python 3.11+ is recommended.
 ## 3. Install dependencies
 
 ```
-pip install openai genanki requests edge-tts
+pip install openai genanki requests edge-tts platformdirs
 ```
 
 or
@@ -65,6 +65,21 @@ pip install -r requirements.txt
 
 # Usage
 
+## Desktop UI
+
+Run the PySide6 desktop app:
+
+```
+python app.py
+```
+
+The UI uses the same user-data directory and scripts as the CLI workflow. It can
+browse flashcards, paste/import `vocabulary.csv` and `sentences.csv`, export
+Anki decks, and edit non-secret TTS settings. API keys are still read from
+environment variables.
+
+---
+
 ## Step 0 - Initialize Database (First Time Only)
 
 ```
@@ -72,16 +87,25 @@ python init_db.py
 ```
 
 This creates `flashcards.db` with the schema.
+Runtime data is stored outside the repository in the OS user-data directory.
+
+Default locations:
+
+```
+Windows: C:\Users\<you>\AppData\Local\FlashcardGenerator\
+macOS:   ~/Library/Application Support/FlashcardGenerator/
+Linux:   ~/.local/share/FlashcardGenerator/
+```
+
+Set `FLASHCARD_GENERATOR_DATA_DIR` to override this location.
 
 ---
 
 ## Step 1 - Prepare input folder
 
-Ensure the `input/` folder exists:
-
-```
-mkdir input
-```
+`init_db.py` creates the user-data `input/` folder automatically. This folder is
+temporary for the current CLI workflow and will be phased out once the app UI
+accepts pasted CSV directly.
 
 ---
 
@@ -177,13 +201,13 @@ Guidelines:
 Copy your CSV files to:
 
 ```
-input/
+<user-data-dir>/input/
 ```
 
 Example:
 ```
-input/vocabulary.csv
-input/sentences.csv
+C:\Users\<you>\AppData\Local\FlashcardGenerator\input\vocabulary.csv
+C:\Users\<you>\AppData\Local\FlashcardGenerator\input\sentences.csv
 ```
 
 ---
@@ -214,12 +238,12 @@ python create_flashcards.py --language japanese --csv sentences.csv --source WV6
 ```
 
 This will:
-1. Read CSV files from `input/`
+1. Read CSV files from the user-data `input/` folder
 2. Skip rows whose **Front** exactly matches an existing card in the same language
-3. Save each new card to `flashcards.db` (auto-generates ID)
+3. Save each new card to the user-data `flashcards.db` (auto-generates ID)
 4. Generate MP3 audio for each new card
 5. Delete CSV files (only if all imports succeeded)
-6. Store audio files in `audio/japanese/`
+6. Store audio files in the user-data `audio/japanese/` folder
 
 **Arguments:**
 - `--language` (required): Language to import (japanese, spanish, french, etc.)
@@ -239,7 +263,7 @@ python generate_apkg.py --language japanese --test
 # Once satisfied, import for production
 python create_flashcards.py --language japanese --source WV6BmI6d_HU
 
-# Import all CSVs in input/
+# Import all CSVs in the user-data input folder
 python create_flashcards.py --language japanese --source WV6BmI6d_HU
 
 # Import specific CSV
@@ -279,12 +303,12 @@ python generate_apkg.py --language japanese
 This will:
 1. Query all flashcards for Japanese from the database
 2. Build the Anki deck with audio files
-3. Create the `.apkg` file in `output/japanese/`
+3. Create the `.apkg` file in the user-data `output/japanese/` folder
 
 The generated deck will be at:
 
 ```
-output/japanese/Japanese.apkg
+<user-data-dir>/output/japanese/Japanese.apkg
 ```
 
 **Arguments:**
@@ -308,57 +332,57 @@ The deck will automatically import with audio and source tags.
 # Project Structure
 
 ```
-languages.json                    (language configuration)
-flashcards.db                     (SQLite database - auto-created)
-
-input/
-  *.csv (your new flashcards for any language)
-
-audio/
-  japanese/
-  spanish/
-
-output/
-  japanese/
-  spanish/
+languages.json                    (seed data for language configuration)
 
 init_db.py                        (initialize database)
 create_flashcards.py              (import CSVs and generate audio)
 generate_apkg.py                  (create Anki deck from database)
 ```
 
+User data lives outside the repository:
+
+```
+FlashcardGenerator/
+  flashcards.db
+  input/
+    *.csv
+  audio/
+    japanese/
+    spanish/
+  output/
+    japanese/
+    spanish/
+```
+
 ---
 
 # Configuration
 
-Edit `languages.json` to add new languages or modify existing ones:
+Language configuration is stored in the `language_configuration` table in
+`flashcards.db`. `init_db.py` seeds missing rows from `languages.json` without
+overwriting rows that already exist, so future UI edits can safely write to the
+database.
 
-```json
-{
-  "japanese": {
-    "name": "Japanese",
-    "tts_provider": "edge",
-    "tts_voice": "ja-JP-NanamiNeural",
-    "tts_rate": "+0%",
-    "tts_volume": "+0%",
-    "tts_pitch": "+0Hz",
-    "instructions": "Speak naturally in standard Japanese...",
-    "model_name": "Japanese Model",
-    "csv_files": ["vocabulary.csv", "sentences.csv"]
-  }
-}
+Example row:
+
+```sql
+SELECT language, name, tts_provider, tts_voice, tts_rate, tts_volume, tts_pitch
+FROM language_configuration
+WHERE language = 'japanese';
 ```
 
 ### Configuration Fields:
+- **language**: Language key used by CLI commands, audio folders, and deck IDs
 - **name**: Display name for the deck
 - **tts_provider**: TTS backend to use (`openai`, `fptai`, or `edge`)
 - **tts_voice**: Voice name for the selected provider
+- **tts_speed**: FPT.AI speech speed, such as `0.85` or `1.0`
 - **tts_rate**: Edge TTS speech rate, such as `+0%`, `-10%`, or `+15%`
 - **tts_volume**: Edge TTS volume, such as `+0%`, `-10%`, or `+15%`
 - **tts_pitch**: Edge TTS pitch, such as `+0Hz`, `-20Hz`, or `+20Hz`
 - **instructions**: Instructions for the text-to-speech model
 - **model_name**: Name of the Anki model
-- **csv_files**: CSV file names to process for this language
+- **csv_files**: JSON array of CSV file names for this language
 
 For Edge TTS, list available voices with:
 

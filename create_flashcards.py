@@ -2,13 +2,18 @@ import sqlite3
 import csv
 import sys
 import argparse
-import json
 from pathlib import Path
+from lib.language_config import load_language_configurations
+from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, ensure_data_dirs
 from lib.tts_providers import get_tts_provider
 
-# Load languages configuration
-with open("languages.json", "r", encoding="utf-8") as f:
-    LANGUAGES_CONFIG = json.load(f)
+ensure_data_dirs()
+
+try:
+    LANGUAGES_CONFIG = load_language_configurations(DB_FILE)
+except Exception as e:
+    print(f"Error: Failed to load language configuration: {e}")
+    sys.exit(1)
 
 # Parse arguments
 parser = argparse.ArgumentParser(description="Import flashcards from CSV and generate audio")
@@ -23,7 +28,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--csv",
-    help="Specific CSV file to import. If not provided, imports all CSVs in input/{language}/"
+    help="Specific CSV file in the user-data input folder. If not provided, imports all CSVs there."
 )
 parser.add_argument(
     "--test",
@@ -39,14 +44,12 @@ TEST_MODE = args.test
 
 # Validate language
 if LANGUAGE not in LANGUAGES_CONFIG:
-    print(f"Error: Language '{LANGUAGE}' not found in languages.json")
+    print(f"Error: Language '{LANGUAGE}' not found in language_configuration")
     print(f"Available languages: {', '.join(LANGUAGES_CONFIG.keys())}")
     sys.exit(1)
 
 LANG_CONFIG = LANGUAGES_CONFIG[LANGUAGE]
-INPUT_DIR = Path("input")
-AUDIO_DIR = Path("audio") / LANGUAGE
-DB_FILE = Path("flashcards.db")
+AUDIO_DIR = AUDIO_ROOT / LANGUAGE
 
 # Create directories
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)

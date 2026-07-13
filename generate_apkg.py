@@ -1,15 +1,19 @@
 import sqlite3
-import json
 import sys
 import argparse
 import hashlib
-from pathlib import Path
 
 import genanki
+from lib.language_config import load_language_configurations
+from lib.paths import AUDIO_ROOT, DB_FILE, OUTPUT_ROOT, ensure_data_dirs
 
-# Load languages configuration
-with open("languages.json", "r", encoding="utf-8") as f:
-    LANGUAGES_CONFIG = json.load(f)
+ensure_data_dirs()
+
+try:
+    LANGUAGES_CONFIG = load_language_configurations(DB_FILE)
+except Exception as e:
+    print(f"Error: Failed to load language configuration: {e}")
+    sys.exit(1)
 
 # Parse arguments
 parser = argparse.ArgumentParser(description="Generate Anki deck from database")
@@ -28,15 +32,14 @@ args = parser.parse_args()
 LANGUAGE = args.language.lower()
 TEST_MODE = args.test
 if LANGUAGE not in LANGUAGES_CONFIG:
-    print(f"Error: Language '{LANGUAGE}' not found in languages.json")
+    print(f"Error: Language '{LANGUAGE}' not found in language_configuration")
     print(f"Available languages: {', '.join(LANGUAGES_CONFIG.keys())}")
     sys.exit(1)
 
 LANG_CONFIG = LANGUAGES_CONFIG[LANGUAGE]
 
-OUTPUT_DIR = Path("output") / LANGUAGE
-AUDIO_DIR = Path("audio") / LANGUAGE
-DB_FILE = Path("flashcards.db")
+OUTPUT_DIR = OUTPUT_ROOT / LANGUAGE
+AUDIO_DIR = AUDIO_ROOT / LANGUAGE
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 

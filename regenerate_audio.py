@@ -1,7 +1,6 @@
 """Safely regenerate audio for existing flashcards."""
 
 import argparse
-import json
 import os
 import sqlite3
 import sys
@@ -9,11 +8,11 @@ import tempfile
 import time
 from pathlib import Path
 
+from lib.language_config import load_language_configuration
+from lib.paths import AUDIO_ROOT, DB_FILE, ensure_data_dirs
 from lib.tts_providers import get_tts_audio_extension, get_tts_provider
 
-
-DB_FILE = Path("flashcards.db")
-CONFIG_FILE = Path("languages.json")
+ensure_data_dirs()
 
 
 def configure_console():
@@ -30,7 +29,7 @@ def parse_args():
     parser.add_argument(
         "--language",
         default="vietnamese",
-        help="Language to regenerate from languages.json (default: vietnamese)",
+        help="Language to regenerate from language_configuration (default: vietnamese)",
     )
     parser.add_argument(
         "--dry-run",
@@ -61,21 +60,6 @@ def parse_args():
         parser.error("--limit must be at least 1")
     args.language = args.language.lower()
     return args
-
-
-def load_config(language):
-    if not CONFIG_FILE.exists():
-        raise FileNotFoundError(f"Configuration not found: {CONFIG_FILE}")
-
-    with CONFIG_FILE.open("r", encoding="utf-8") as config_file:
-        languages = json.load(config_file)
-
-    if language not in languages:
-        available = ", ".join(languages.keys())
-        raise ValueError(
-            f"Language not configured: {language}. Available: {available}"
-        )
-    return languages[language]
 
 
 def is_current_audio(audio_dir, card_id, audio_filename, audio_extension):
@@ -114,12 +98,12 @@ def main():
         return 1
 
     try:
-        language_config = load_config(args.language)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+        language_config = load_language_configuration(args.language, DB_FILE)
+    except (OSError, RuntimeError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
-    audio_dir = Path("audio") / args.language
+    audio_dir = AUDIO_ROOT / args.language
 
     connection = sqlite3.connect(str(DB_FILE))
     connection.row_factory = sqlite3.Row

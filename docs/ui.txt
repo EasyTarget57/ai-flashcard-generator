@@ -1,0 +1,22 @@
+
+Basically all pages will have a dropdown to select the language (show the name in the dropdown).
+
+For Flashcards I think your suggestion is quite good. Basically the filter on language and a table with the columns that we support. let's call it like we do in the CSV: Front,Back,Pronunciation,Notes,Source and a play button that plays the sound. I would also like to have a clearable filter on the displayed columns (except for the audio)
+
+For import. (Besides the dropdown with languages). We can have a checkbox (default unchecked) to select test or not. We can just add 2 multi line textboxes for now to put the 2 CSVs: vocabulary.csv and input.csv.
+At the bottom we have a submit button.
+This copies the CSV into the input folder (skip if it's empty or only has the headers) and calls our python script. For example:
+python create_flashcards.py --language japanese --test (Japanese and test selected)
+python create_flashcards.py --language vietnamese (Vietnamese and test not selected)
+We will show the output of the script as a pop-up.
+
+For export. We have the filter on language and a test checkbox. This calls our script like:
+python generate_apkg.py --language japanese --test     (Japanese and test selected)
+python generate_apkg.py --language vietnamese  (Vietnamese and test not selected)
+We will show the output of the script as a pop-up. When it's done I would also like to open the generated apkg file  (this should open Anki so the user can immediately import it)
+Note: python generate_apkg.py --language japanese --test currently has user input to confirm the test cards will be deleted. If the user cannot type in the app we should make this auto click y
+WARNING: About to delete all 1 test entries for 'japanese' and their audio files.
+This cannot be undone.
+Continue? (y/n): y
+
+For settings. We have the filter on language. Then a dropdown to select the TTS. For every TTS please show the relevant configuration. For now we can just make those textfields. Then we have a submit which saves the configuration to database. If the scripts fail we should just show a pop-up for now with the issue.
