@@ -2,6 +2,7 @@ import sqlite3
 import sys
 import argparse
 import hashlib
+import re
 
 import genanki
 from lib.language_config import load_language_configurations
@@ -147,6 +148,12 @@ deck = genanki.Deck(
 media_files = []
 
 
+def source_to_tag(source):
+    """Convert a source label to an Anki-compatible tag."""
+    tag = re.sub(r"\s+", "_", (source or "").strip())
+    return tag or None
+
+
 def add_flashcard_from_db(row):
     """Add a flashcard from database to deck."""
     # Build field values from database
@@ -178,8 +185,9 @@ def add_flashcard_from_db(row):
 
     # Build tags from source
     tags = []
-    if row["source"]:
-        tags.append(row["source"])
+    source_tag = source_to_tag(row["source"])
+    if source_tag:
+        tags.append(source_tag)
 
     note = genanki.Note(
         model=MODEL,

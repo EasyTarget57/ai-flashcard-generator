@@ -1,16 +1,16 @@
 import csv
-import os
 import sqlite3
 import sys
+import tempfile
+import time
 from io import StringIO
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QUrl
-from PySide6.QtGui import QAction, QTextCursor
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices, QTextCursor
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -33,13 +33,103 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from edge_voices import list_edge_voice_names
 from init_db import init_database
 from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, OUTPUT_ROOT, ensure_data_dirs
+from lib.tts_providers import get_tts_provider
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 PYTHON = sys.executable
 CSV_HEADER = "Front,Back,Pronunciation,Notes"
+PROJECT_URL = "https://github.com/EasyTarget57/ai-flashcard-generator"
+OPENAI_API_KEYS_URL = "https://platform.openai.com/settings/organization/api-keys"
+FPTAI_API_KEYS_URL = "https://marketplace.fptcloud.com/en/my-account?tab=my-api-key"
+SETTINGS_ORGANIZATION = "FlashcardGenerator"
+SETTINGS_APPLICATION = "AI Flashcard Generator"
+SELECTED_LANGUAGE_KEY = "selected_language"
+DEFAULT_TTS_VALUES = {
+    "openai": {
+        "tts_voice": "alloy",
+    },
+    "fptai": {
+        "tts_voice": "std_hatieumai",
+        "tts_speed": "0.85",
+    },
+    "edge": {
+        "tts_voice": "en-US-JennyNeural",
+        "tts_rate": "+0%",
+        "tts_volume": "+0%",
+        "tts_pitch": "+0Hz",
+    },
+}
+LANGUAGE_PROVIDER_DEFAULTS = {
+    ("japanese", "edge"): {
+        "tts_voice": "ja-JP-NanamiNeural",
+    },
+    ("vietnamese", "edge"): {
+        "tts_voice": "vi-VN-HoaiMyNeural",
+    },
+    ("spanish", "edge"): {
+        "tts_voice": "es-ES-ElviraNeural",
+    },
+    ("french", "edge"): {
+        "tts_voice": "fr-FR-DeniseNeural",
+    },
+}
+OPENAI_TTS_VOICES = {"alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"}
+CSV_GUIDE_PROMPT = """Create flashcards from the provided learning material for someone learning [LANGUAGE].
+
+Generate two CSV files: vocabulary.csv and sentences.csv.
+
+vocabulary.csv:
+Front,Back,Pronunciation,Notes
+
+sentences.csv:
+Front,Back,Pronunciation
+
+Guidelines:
+- Front: text in the language being learned.
+- Back: English translation.
+- Pronunciation is optional. Use romaji for Japanese. Leave it empty if not needed.
+- Notes is optional and may contain useful context such as noun, verb, grammar, or usage notes.
+- Extract useful vocabulary from the source material.
+- Prefer the base/dictionary form of verbs for vocabulary cards.
+- Ignore filler words and unnecessary repetition.
+- Remove duplicate cards.
+- Preserve natural sentences from the source material when useful.
+- You may also create natural example sentences that demonstrate vocabulary in different contexts.
+- Prefer useful, natural flashcards over trying to reach a specific number of cards.
+- Return valid CSV."""
+
+CSV_GUIDE_TEXT = """How to create your CSV files
+
+You can use ChatGPT or another AI assistant to create the CSV files for you.
+
+1. Prepare your source material
+
+Choose videos, class notes, PDFs, Word documents, copied lesson text, or any other learning material.
+
+For YouTube videos, download or copy the subtitles or transcript as plain text first.
+
+2. Give the material to an AI assistant
+
+Upload or paste your source material into ChatGPT or another AI assistant, then use the prompt below.
+
+For videos, ask the assistant to prefer sentences actually used in the transcript.
+For notes or class documents, ask it to extract useful vocabulary and create natural example sentences in different contexts.
+
+3. Paste the CSVs here
+
+Copy the contents of vocabulary.csv and sentences.csv into the matching fields on this screen, then click Import."""
+
+
+def utf8_process_environment():
+    environment = QProcessEnvironment.systemEnvironment()
+    environment.insert("PYTHONIOENCODING", "utf-8")
+    environment.insert("PYTHONUTF8", "1")
+    environment.insert("PYTHONUNBUFFERED", "1")
+    return environment
 
 
 def ensure_database():
@@ -67,6 +157,52 @@ def load_languages():
     return [dict(row) for row in rows]
 
 
+def initial_selected_language(languages):
+    if not languages:
+        return None
+    settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+    saved_language = settings.value(SELECTED_LANGUAGE_KEY, "", str)
+    available = {language["language"] for language in languages}
+    if saved_language in available:
+        return saved_language
+    return languages[0]["language"]
+
+
+def save_selected_language(language):
+    if not language:
+        return
+    settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+    settings.setValue(SELECTED_LANGUAGE_KEY, language)
+
+
+def default_tts_values(language, provider, language_name):
+    defaults = dict(DEFAULT_TTS_VALUES.get(provider, {}))
+    defaults.update(LANGUAGE_PROVIDER_DEFAULTS.get((language, provider), {}))
+    if provider == "openai" and language == "vietnamese":
+        defaults["tts_voice"] = "nova"
+    if provider == "fptai":
+        defaults["tts_voice"] = "std_hatieumai"
+    if language_name:
+        defaults.setdefault(
+            "instructions",
+            f"Speak naturally in standard {language_name}. Use clear pronunciation suitable for language learners.",
+        )
+        defaults.setdefault("model_name", f"{language_name} Model")
+    return defaults
+
+
+def voice_looks_incompatible(provider, voice):
+    if not voice:
+        return False
+    if provider == "edge":
+        return voice.startswith("std_") or voice in OPENAI_TTS_VOICES
+    if provider == "fptai":
+        return "Neural" in voice or voice in OPENAI_TTS_VOICES
+    if provider == "openai":
+        return "Neural" in voice or voice.startswith("std_")
+    return False
+
+
 def csv_has_data(text):
     if not text.strip():
         return False
@@ -88,13 +224,37 @@ def write_csv_if_needed(filename, text):
     return path
 
 
-def open_path(path):
+def clear_input_csv_files():
+    INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for path in INPUT_DIR.glob("*.csv"):
+        if path.is_file():
+            path.unlink()
+
+
+def open_path(path, show_warning=True):
+    path = Path(path)
     try:
-        os.startfile(path)
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        if not opened:
+            raise OSError("No application is registered for this file type.")
         return True
     except OSError as error:
-        QMessageBox.warning(None, "Open Failed", f"Could not open:\n{path}\n\n{error}")
+        if show_warning:
+            QMessageBox.warning(None, "Open Failed", f"Could not open:\n{path}\n\n{error}")
         return False
+
+
+def open_export_output(output):
+    output = Path(output)
+    if open_path(output, show_warning=False):
+        return
+    if open_path(output.parent, show_warning=False):
+        return
+    QMessageBox.warning(
+        None,
+        "Open Failed",
+        f"Could not open the generated deck or output folder:\n{output}",
+    )
 
 
 class ProcessDialog(QDialog):
@@ -104,6 +264,7 @@ class ProcessDialog(QDialog):
         self.resize(640, 460)
         self.on_success = on_success
         self.exit_code = None
+        self.completed = False
 
         layout = QVBoxLayout(self)
         self.output = QTextEdit()
@@ -117,18 +278,23 @@ class ProcessDialog(QDialog):
         layout.addWidget(self.buttons)
 
         self.process = QProcess(self)
+        self.process.setProcessEnvironment(utf8_process_environment())
         self.process.setWorkingDirectory(str(PROJECT_ROOT))
         self.process.setProgram(command[0])
         self.process.setArguments(command[1:])
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.finished.connect(self.finished)
+        self.watchdog = QTimer(self)
+        self.watchdog.setInterval(250)
+        self.watchdog.timeout.connect(self.check_finished)
 
         self.append(f"Running: {' '.join(command)}\n")
         self.process.start()
         if stdin_text:
             self.process.write(stdin_text.encode("utf-8"))
-            self.process.closeWriteChannel()
+        self.process.closeWriteChannel()
+        self.watchdog.start()
 
     def append(self, text):
         self.output.moveCursor(QTextCursor.End)
@@ -140,12 +306,23 @@ class ProcessDialog(QDialog):
         self.append(text)
 
     def finished(self, exit_code, _exit_status):
+        self.complete(exit_code)
+
+    def check_finished(self):
+        if self.process.state() == QProcess.NotRunning:
+            self.complete(self.process.exitCode())
+
+    def complete(self, exit_code):
+        if self.completed:
+            return
+        self.completed = True
+        self.watchdog.stop()
         self.exit_code = exit_code
         self.read_output()
         self.append(f"\nDone. Exit code: {exit_code}\n")
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
         if exit_code == 0 and self.on_success:
-            self.on_success()
+            QTimer.singleShot(250, self.on_success)
 
 
 class MultiProcessDialog(QDialog):
@@ -156,6 +333,7 @@ class MultiProcessDialog(QDialog):
         self.commands = commands
         self.command_index = -1
         self.failed = False
+        self.completed_current_process = False
 
         layout = QVBoxLayout(self)
         self.output = QTextEdit()
@@ -169,10 +347,14 @@ class MultiProcessDialog(QDialog):
         layout.addWidget(self.buttons)
 
         self.process = QProcess(self)
+        self.process.setProcessEnvironment(utf8_process_environment())
         self.process.setWorkingDirectory(str(PROJECT_ROOT))
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.finished.connect(self.finished)
+        self.watchdog = QTimer(self)
+        self.watchdog.setInterval(250)
+        self.watchdog.timeout.connect(self.check_finished)
         self.start_next()
 
     def append(self, text):
@@ -187,16 +369,30 @@ class MultiProcessDialog(QDialog):
             self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
             return
         command = self.commands[self.command_index]
+        self.completed_current_process = False
         self.append(f"Running: {' '.join(command)}\n")
         self.process.setProgram(command[0])
         self.process.setArguments(command[1:])
         self.process.start()
+        self.process.closeWriteChannel()
+        self.watchdog.start()
 
     def read_output(self):
         text = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
         self.append(text)
 
     def finished(self, exit_code, _exit_status):
+        self.complete_current_process(exit_code)
+
+    def check_finished(self):
+        if self.process.state() == QProcess.NotRunning:
+            self.complete_current_process(self.process.exitCode())
+
+    def complete_current_process(self, exit_code):
+        if self.completed_current_process:
+            return
+        self.completed_current_process = True
+        self.watchdog.stop()
         self.read_output()
         self.append(f"\nExit code: {exit_code}\n\n")
         if exit_code != 0:
@@ -247,6 +443,142 @@ class BasePage(QWidget):
     def current_language_config(self):
         language = self.current_language()
         return next((item for item in self.app_window.languages if item["language"] == language), None)
+
+
+class AboutDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About AI Flashcard Generator")
+        self.setFixedWidth(420)
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel("AI Flashcard Generator")
+        title.setObjectName("AboutTitle")
+        layout.addWidget(title)
+
+        version = QLabel("Version 0.1.0 Beta")
+        version.setObjectName("InfoText")
+        layout.addWidget(version)
+
+        description = QLabel("Create audio flashcards and export them as Anki decks.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        warning = QLabel("⚠ This application is currently in beta.\nFeatures and data formats may change.")
+        warning.setObjectName("InfoLabel")
+        warning.setWordWrap(True)
+        layout.addWidget(warning)
+
+        github = QPushButton("View project on GitHub")
+        github.clicked.connect(self.open_project)
+        layout.addWidget(github)
+
+        author = QLabel("Created by Dean Voets")
+        layout.addWidget(author)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def open_project(self):
+        QDesktopServices.openUrl(QUrl(PROJECT_URL))
+
+
+class ApiKeyGuideDialog(QDialog):
+    provider_info = {
+        "openai": {
+            "title": "OpenAI API Key Setup",
+            "name": "OpenAI",
+            "env_var": "OPENAI_API_KEY",
+            "url": OPENAI_API_KEYS_URL,
+            "notes": (
+                "Create an API key in your OpenAI dashboard, then set it as an "
+                "environment variable before starting the app."
+            ),
+        },
+        "fptai": {
+            "title": "FPT.AI API Key Setup",
+            "name": "FPT.AI",
+            "env_var": "FPTAI_API_KEY",
+            "url": FPTAI_API_KEYS_URL,
+            "notes": (
+                "Create an API key in the FPT Marketplace. You may need to register "
+                "and add credit before audio generation works."
+            ),
+        },
+    }
+
+    def __init__(self, provider, parent=None):
+        super().__init__(parent)
+        self.info = self.provider_info[provider]
+        self.setWindowTitle(self.info["title"])
+        self.resize(560, 360)
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel(self.info["title"])
+        title.setObjectName("AboutTitle")
+        layout.addWidget(title)
+
+        intro = QLabel(self.info["notes"])
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        steps = QTextEdit()
+        steps.setReadOnly(True)
+        steps.setPlainText(
+            "1. Create or copy an API key from the provider page.\n\n"
+            f"2. Set this environment variable:\n{self.info['env_var']}\n\n"
+            "3. Restart the app so it can read the new environment variable.\n\n"
+            "The app does not store API keys in the database or settings file."
+        )
+        layout.addWidget(steps)
+
+        open_button = QPushButton(f"Open {self.info['name']} API key page")
+        open_button.clicked.connect(self.open_key_page)
+        layout.addWidget(open_button)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def open_key_page(self):
+        QDesktopServices.openUrl(QUrl(self.info["url"]))
+
+
+class CsvGuideDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("How to Create CSVs")
+        self.resize(680, 620)
+
+        layout = QVBoxLayout(self)
+
+        guide = QTextEdit()
+        guide.setReadOnly(True)
+        guide.setPlainText(CSV_GUIDE_TEXT)
+        layout.addWidget(guide)
+
+        prompt_label = QLabel("AI prompt")
+        prompt_label.setObjectName("SectionLabel")
+        layout.addWidget(prompt_label)
+
+        self.prompt = QPlainTextEdit()
+        self.prompt.setReadOnly(True)
+        self.prompt.setPlainText(CSV_GUIDE_PROMPT)
+        self.prompt.setMinimumHeight(220)
+        layout.addWidget(self.prompt)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        copy_button = buttons.addButton("Copy Prompt", QDialogButtonBox.ActionRole)
+        copy_button.clicked.connect(self.copy_prompt)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def copy_prompt(self):
+        QApplication.clipboard().setText(CSV_GUIDE_PROMPT)
+        QMessageBox.information(self, "Prompt Copied", "The CSV creation prompt has been copied.")
 
 
 class FlashcardsPage(BasePage):
@@ -363,8 +695,16 @@ class FlashcardsPage(BasePage):
 class ImportPage(BasePage):
     def __init__(self, app_window):
         super().__init__(app_window, "Import Flashcards")
-        self.test_checkbox = QCheckBox("Test mode")
-        self.root_layout.addWidget(self.test_checkbox)
+
+        intro = QHBoxLayout()
+        summary = QLabel("Turn videos, notes, or class materials into flashcards.")
+        summary.setObjectName("InfoText")
+        intro.addWidget(summary)
+        intro.addStretch()
+        guide_button = QPushButton("How to create CSVs")
+        guide_button.clicked.connect(self.show_csv_guide)
+        intro.addWidget(guide_button)
+        self.root_layout.addLayout(intro)
 
         self.source = QLineEdit()
         self.source.setPlaceholderText("Optional source tag, such as a YouTube video ID")
@@ -372,18 +712,18 @@ class ImportPage(BasePage):
         self.root_layout.addWidget(self.source)
 
         self.vocabulary = QPlainTextEdit()
-        self.vocabulary.setPlaceholderText(f"Paste vocabulary.csv here...\n({CSV_HEADER})")
+        self.vocabulary.setPlaceholderText("Paste CSV content here...")
         self.sentences = QPlainTextEdit()
-        self.sentences.setPlaceholderText(f"Paste sentences.csv here...\n({CSV_HEADER})")
+        self.sentences.setPlaceholderText("Paste CSV content here...")
         for editor in (self.vocabulary, self.sentences):
             editor.textChanged.connect(self.update_submit_state)
 
-        self.root_layout.addWidget(QLabel("vocabulary.csv"))
+        self.root_layout.addWidget(QLabel(f"Vocabulary CSV ({CSV_HEADER})"))
         self.root_layout.addWidget(self.vocabulary)
-        self.root_layout.addWidget(QLabel("sentences.csv"))
+        self.root_layout.addWidget(QLabel("Sentence CSV (Front,Back,Pronunciation)"))
         self.root_layout.addWidget(self.sentences)
 
-        self.submit = QPushButton("Submit")
+        self.submit = QPushButton("Import")
         self.submit.clicked.connect(self.import_cards)
         footer = QHBoxLayout()
         footer.addStretch()
@@ -391,29 +731,36 @@ class ImportPage(BasePage):
         self.root_layout.addLayout(footer)
         self.update_submit_state()
 
+    def show_csv_guide(self):
+        dialog = CsvGuideDialog(self)
+        dialog.exec()
+
     def update_submit_state(self):
         self.submit.setEnabled(csv_has_data(self.vocabulary.toPlainText()) or csv_has_data(self.sentences.toPlainText()))
 
     def import_cards(self):
         language = self.current_language()
-        files = [
-            write_csv_if_needed("vocabulary.csv", self.vocabulary.toPlainText()),
-            write_csv_if_needed("sentences.csv", self.sentences.toPlainText()),
+        csv_inputs = [
+            ("vocabulary.csv", self.vocabulary.toPlainText()),
+            ("sentences.csv", self.sentences.toPlainText()),
         ]
-        files = [path for path in files if path]
-        if not files:
+        if not any(csv_has_data(text) for _, text in csv_inputs):
             QMessageBox.information(self, "Nothing to Import", "Both CSV areas are empty or header-only.")
             return
 
-        commands = []
+        clear_input_csv_files()
+        files = [
+            write_csv_if_needed(filename, text)
+            for filename, text in csv_inputs
+        ]
+        files = [path for path in files if path]
+
+        command = [PYTHON, "create_flashcards.py", "--language", language]
+        if self.source.text().strip():
+            command.extend(["--source", self.source.text().strip()])
         for path in files:
-            command = [PYTHON, "create_flashcards.py", "--language", language, "--csv", path.name]
-            if self.source.text().strip():
-                command.extend(["--source", self.source.text().strip()])
-            if self.test_checkbox.isChecked():
-                command.append("--test")
-            commands.append(command)
-        self.run_import_commands(commands)
+            command.extend(["--csv", path.name])
+        self.run_import_commands([command])
 
     def run_import_commands(self, commands):
         dialog = MultiProcessDialog("Import Result", commands, self)
@@ -424,9 +771,7 @@ class ImportPage(BasePage):
 class ExportPage(BasePage):
     def __init__(self, app_window):
         super().__init__(app_window, "Export to Anki")
-        self.test_checkbox = QCheckBox("Test mode")
-        self.root_layout.addWidget(self.test_checkbox)
-        note = QLabel("In test mode, test cards and their audio files will be deleted during export.")
+        note = QLabel("Create an Anki package from the imported flashcards for the selected language.")
         note.setObjectName("InfoLabel")
         self.root_layout.addWidget(note)
         self.root_layout.addStretch()
@@ -440,27 +785,45 @@ class ExportPage(BasePage):
     def export_deck(self):
         language = self.current_language()
         config = self.current_language_config()
-        test_mode = self.test_checkbox.isChecked()
         command = [PYTHON, "generate_apkg.py", "--language", language]
-        if test_mode:
-            command.append("--test")
-        deck_name = config["name"] + ("-test" if test_mode else "")
+        deck_name = config["name"]
         output = OUTPUT_ROOT / language / f"{deck_name}.apkg"
         dialog = ProcessDialog(
             "Export Result",
             command,
-            stdin_text="y\n" if test_mode else "",
-            on_success=lambda: open_path(str(output)) if output.exists() else None,
+            on_success=lambda: open_export_output(output) if output.exists() else None,
             parent=self,
         )
         dialog.exec()
 
 
+class TtsPreviewWorker(QObject):
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, provider_name, config, text, preview_dir):
+        super().__init__()
+        self.provider_name = provider_name
+        self.config = config
+        self.text = text
+        self.preview_dir = preview_dir
+
+    def run(self):
+        try:
+            self.preview_dir.mkdir(parents=True, exist_ok=True)
+            provider = get_tts_provider(self.provider_name, self.config)
+            audio_id = int(time.time() * 1000)
+            filename = provider.generate_audio(self.text, audio_id, self.preview_dir)
+            self.finished.emit(str(self.preview_dir / filename))
+        except Exception as error:
+            self.failed.emit(str(error))
+
+
 class SettingsPage(BasePage):
     provider_fields = {
         "openai": ["tts_voice", "instructions", "model_name"],
-        "fptai": ["tts_voice", "tts_speed", "instructions", "model_name"],
-        "edge": ["tts_voice", "tts_rate", "tts_volume", "tts_pitch", "instructions", "model_name"],
+        "fptai": ["tts_voice", "tts_speed", "model_name"],
+        "edge": ["tts_voice", "tts_rate", "tts_volume", "tts_pitch", "model_name"],
     }
     labels = {
         "tts_voice": "Voice",
@@ -474,14 +837,21 @@ class SettingsPage(BasePage):
 
     def __init__(self, app_window):
         super().__init__(app_window, "TTS Settings")
+        self.loading_settings = False
         self.provider = QComboBox()
         self.provider.addItems(["edge", "openai", "fptai"])
-        self.provider.currentTextChanged.connect(self.update_visible_fields)
+        self.provider.currentTextChanged.connect(self.provider_changed)
         self.form = QFormLayout()
         self.form.addRow("TTS Provider", self.provider)
         self.inputs = {}
         for key, label in self.labels.items():
-            widget = QPlainTextEdit() if key == "instructions" else QLineEdit()
+            if key == "instructions":
+                widget = QPlainTextEdit()
+            elif key == "tts_voice":
+                widget = QComboBox()
+                widget.setEditable(True)
+            else:
+                widget = QLineEdit()
             if isinstance(widget, QPlainTextEdit):
                 widget.setFixedHeight(90)
             self.inputs[key] = widget
@@ -489,7 +859,51 @@ class SettingsPage(BasePage):
         wrapper = QWidget()
         wrapper.setLayout(self.form)
         self.root_layout.addWidget(wrapper)
-        self.root_layout.addWidget(QLabel("API keys are read from environment variables and are not stored here."))
+
+        self.api_key_widget = QWidget()
+        api_key_row = QHBoxLayout()
+        api_key_row.setContentsMargins(0, 0, 0, 0)
+        self.api_key_note = QLabel("API keys are read from environment variables and are not stored here.")
+        self.api_key_note.setObjectName("ImportantInfo")
+        api_key_row.addWidget(self.api_key_note)
+        api_key_row.addStretch()
+        self.api_key_help_button = QPushButton("API key setup")
+        self.api_key_help_button.clicked.connect(self.show_api_key_guide)
+        api_key_row.addWidget(self.api_key_help_button)
+        self.api_key_widget.setLayout(api_key_row)
+        self.root_layout.addWidget(self.api_key_widget)
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        self.root_layout.addWidget(separator)
+
+        preview_label = QLabel("Test Audio")
+        preview_label.setObjectName("SectionLabel")
+        self.root_layout.addWidget(preview_label)
+
+        self.preview_text = QPlainTextEdit()
+        self.preview_text.setPlaceholderText("Type text to generate a short audio preview...")
+        self.preview_text.setFixedHeight(80)
+        self.preview_text.textChanged.connect(self.update_preview_button)
+        self.root_layout.addWidget(self.preview_text)
+
+        preview_footer = QHBoxLayout()
+        self.preview_status = QLabel("")
+        self.preview_status.setObjectName("InfoText")
+        preview_footer.addWidget(self.preview_status)
+        preview_footer.addStretch()
+        self.preview_button = QPushButton("Generate Test Audio")
+        self.preview_button.clicked.connect(self.generate_preview_audio)
+        preview_footer.addWidget(self.preview_button)
+        self.root_layout.addLayout(preview_footer)
+
+        self.preview_player = QMediaPlayer(self)
+        self.preview_audio_output = QAudioOutput(self)
+        self.preview_player.setAudioOutput(self.preview_audio_output)
+        self.preview_thread = None
+        self.preview_worker = None
+
         self.root_layout.addStretch()
         self.save_button = QPushButton("Save Settings")
         self.save_button.clicked.connect(self.save_settings)
@@ -498,23 +912,110 @@ class SettingsPage(BasePage):
         footer.addWidget(self.save_button)
         self.root_layout.addLayout(footer)
         self.language_combo.currentIndexChanged.connect(self.load_settings)
+        self.update_preview_button()
 
     def load_settings(self):
         config = self.current_language_config()
         if not config:
             return
+        self.loading_settings = True
         provider_index = self.provider.findText(config["tts_provider"])
         self.provider.setCurrentIndex(provider_index if provider_index >= 0 else 0)
+        self.update_voice_options()
         for key, widget in self.inputs.items():
             value = "" if config.get(key) is None else str(config.get(key))
-            if isinstance(widget, QPlainTextEdit):
-                widget.setPlainText(value)
-            else:
-                widget.setText(value)
+            self.set_input_value(widget, value)
+        self.loading_settings = False
+        self.apply_provider_defaults(only_empty=True)
         self.update_visible_fields()
+
+    def provider_changed(self):
+        self.update_voice_options()
+        if self.loading_settings:
+            self.apply_provider_defaults(only_empty=True)
+        else:
+            provider_specific_fields = [
+                field for field in self.provider_fields.get(self.provider.currentText(), [])
+                if field not in {"instructions", "model_name"}
+            ]
+            self.apply_provider_defaults(only_empty=False, fields=provider_specific_fields)
+        self.update_visible_fields()
+
+    def show_api_key_guide(self):
+        provider = self.provider.currentText()
+        if provider not in ApiKeyGuideDialog.provider_info:
+            return
+        dialog = ApiKeyGuideDialog(provider, self)
+        dialog.exec()
+
+    def update_voice_options(self):
+        config = self.current_language_config()
+        if not config:
+            return
+        voice = self.inputs["tts_voice"]
+        current = self.input_value(voice)
+        provider = self.provider.currentText()
+        defaults = default_tts_values(config["language"], provider, config["name"])
+        options = []
+        if provider == "edge":
+            try:
+                options = list_edge_voice_names(config["language"])
+            except Exception:
+                options = []
+        elif provider == "openai":
+            options = sorted(OPENAI_TTS_VOICES)
+        elif provider == "fptai":
+            options = ["std_hatieumai"]
+        fallback = defaults.get("tts_voice")
+        for value in (current, fallback):
+            if value and value not in options:
+                options.insert(0, value)
+        voice.blockSignals(True)
+        voice.clear()
+        voice.addItems(options)
+        if current:
+            voice.setCurrentText(current)
+        elif fallback:
+            voice.setCurrentText(fallback)
+        voice.blockSignals(False)
+
+    def input_value(self, widget):
+        if isinstance(widget, QPlainTextEdit):
+            return widget.toPlainText().strip()
+        if isinstance(widget, QComboBox):
+            return widget.currentText().strip()
+        return widget.text().strip()
+
+    def set_input_value(self, widget, value):
+        if isinstance(widget, QPlainTextEdit):
+            widget.setPlainText(str(value))
+        elif isinstance(widget, QComboBox):
+            widget.setCurrentText(str(value))
+        else:
+            widget.setText(str(value))
+
+    def apply_provider_defaults(self, only_empty=True, fields=None):
+        config = self.current_language_config()
+        if not config:
+            return
+        defaults = default_tts_values(config["language"], self.provider.currentText(), config["name"])
+        if fields is not None:
+            fields = set(fields)
+            defaults = {key: value for key, value in defaults.items() if key in fields}
+        for key, default in defaults.items():
+            widget = self.inputs.get(key)
+            if not widget:
+                continue
+            current = self.input_value(widget)
+            if only_empty and current and not (key == "tts_voice" and voice_looks_incompatible(self.provider.currentText(), current)):
+                continue
+            self.set_input_value(widget, default)
 
     def update_visible_fields(self):
         visible = set(self.provider_fields.get(self.provider.currentText(), []))
+        show_api_key_help = self.provider.currentText() in ApiKeyGuideDialog.provider_info
+        self.api_key_widget.setVisible(show_api_key_help)
+        self.api_key_help_button.setVisible(show_api_key_help)
         for index in range(1, self.form.rowCount()):
             label_item = self.form.itemAt(index, QFormLayout.LabelRole)
             field_item = self.form.itemAt(index, QFormLayout.FieldRole)
@@ -525,14 +1026,91 @@ class SettingsPage(BasePage):
             label_item.widget().setVisible(show)
             field_item.widget().setVisible(show)
 
-    def save_settings(self):
-        language = self.current_language()
+    def current_form_values(self):
         values = {}
         for key, widget in self.inputs.items():
-            if isinstance(widget, QPlainTextEdit):
-                values[key] = widget.toPlainText().strip() or None
-            else:
-                values[key] = widget.text().strip() or None
+            values[key] = self.input_value(widget) or None
+        return values
+
+    def provider_specific_values(self):
+        provider = self.provider.currentText()
+        values = self.current_form_values()
+        if provider != "openai":
+            values["instructions"] = None
+        if provider != "fptai":
+            values["tts_speed"] = None
+        if provider != "edge":
+            values["tts_rate"] = None
+            values["tts_volume"] = None
+            values["tts_pitch"] = None
+        return values
+
+    def current_tts_config(self):
+        config = self.current_language_config()
+        language_name = config["name"] if config else ""
+        values = self.provider_specific_values()
+        return {
+            "name": language_name,
+            "tts_provider": self.provider.currentText(),
+            "tts_voice": values["tts_voice"],
+            "tts_speed": float(values["tts_speed"]) if values["tts_speed"] else None,
+            "tts_rate": values["tts_rate"],
+            "tts_volume": values["tts_volume"],
+            "tts_pitch": values["tts_pitch"],
+            "instructions": values["instructions"],
+            "model_name": values["model_name"] or f"{language_name} Model",
+        }
+
+    def update_preview_button(self):
+        has_text = bool(self.preview_text.toPlainText().strip())
+        self.preview_button.setEnabled(has_text and self.preview_thread is None)
+
+    def generate_preview_audio(self):
+        text = self.preview_text.toPlainText().strip()
+        if not text:
+            QMessageBox.information(self, "Nothing to Preview", "Enter text to generate a test audio preview.")
+            return
+
+        try:
+            config = self.current_tts_config()
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid Settings", str(error))
+            return
+
+        provider_name = self.provider.currentText()
+        preview_dir = Path(tempfile.gettempdir()) / "FlashcardGenerator" / "tts-preview"
+        self.preview_status.setText("Generating audio...")
+        self.preview_button.setEnabled(False)
+
+        self.preview_thread = QThread(self)
+        self.preview_worker = TtsPreviewWorker(provider_name, config, text, preview_dir)
+        self.preview_worker.moveToThread(self.preview_thread)
+        self.preview_thread.started.connect(self.preview_worker.run)
+        self.preview_worker.finished.connect(self.preview_generated)
+        self.preview_worker.failed.connect(self.preview_failed)
+        self.preview_worker.finished.connect(self.preview_thread.quit)
+        self.preview_worker.failed.connect(self.preview_thread.quit)
+        self.preview_thread.finished.connect(self.preview_worker.deleteLater)
+        self.preview_thread.finished.connect(self.preview_thread_finished)
+        self.preview_thread.start()
+
+    def preview_generated(self, path):
+        self.preview_status.setText("Playing preview.")
+        self.preview_player.setSource(QUrl.fromLocalFile(path))
+        self.preview_player.play()
+
+    def preview_failed(self, message):
+        self.preview_status.setText("Preview failed.")
+        QMessageBox.critical(self, "Preview Failed", f"Could not generate test audio:\n{message}")
+
+    def preview_thread_finished(self):
+        self.preview_thread = None
+        self.preview_worker = None
+        self.update_preview_button()
+
+    def save_settings(self):
+        language = self.current_language()
+        values = self.provider_specific_values()
         try:
             with connect_db() as connection:
                 connection.execute(
@@ -567,7 +1145,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("AI Flashcard Generator")
         self.resize(1120, 720)
         self.languages = load_languages()
-        self.selected_language = self.languages[0]["language"] if self.languages else None
+        self.selected_language = initial_selected_language(self.languages)
 
         root = QWidget()
         layout = QHBoxLayout(root)
@@ -602,7 +1180,8 @@ class MainWindow(QMainWindow):
             nav_layout.addWidget(button)
             self.stack.addWidget(page)
         nav_layout.addStretch()
-        about = QLabel("About")
+        about = QPushButton("About")
+        about.clicked.connect(self.show_about)
         nav_layout.addWidget(about)
 
         layout.addWidget(nav)
@@ -620,6 +1199,7 @@ class MainWindow(QMainWindow):
             self.selected_language = previous_language
         else:
             self.selected_language = self.languages[0]["language"] if self.languages else None
+        save_selected_language(self.selected_language)
         for _, page in self.pages:
             page.refresh_languages()
         self.flashcards_page.load_cards()
@@ -629,6 +1209,7 @@ class MainWindow(QMainWindow):
         if language == self.selected_language:
             return
         self.selected_language = language
+        save_selected_language(language)
         for _, page in self.pages:
             if page is source_page:
                 continue
@@ -647,6 +1228,10 @@ class MainWindow(QMainWindow):
             page.load_cards()
         if isinstance(page, SettingsPage):
             page.load_settings()
+
+    def show_about(self):
+        dialog = AboutDialog(self)
+        dialog.exec()
 
 
 APP_STYLE = """
@@ -677,6 +1262,7 @@ QMainWindow, QWidget {
 }
 #Nav QLabel {
     color: white;
+    background: transparent;
     padding: 14px;
 }
 #PageTitle {
@@ -688,6 +1274,20 @@ QMainWindow, QWidget {
     border: 1px solid #a9cff8;
     border-radius: 4px;
     padding: 10px;
+}
+#InfoText {
+    color: #4f5f73;
+}
+#ImportantInfo {
+    color: #172033;
+    font-weight: 600;
+}
+#SectionLabel {
+    font-weight: 600;
+}
+#AboutTitle {
+    font-size: 16pt;
+    font-weight: 650;
 }
 QPushButton {
     padding: 8px 14px;
@@ -701,23 +1301,6 @@ QPushButton:hover {
 QPushButton:disabled {
     color: #8d99a8;
     background: #edf1f5;
-}
-QCheckBox {
-    spacing: 8px;
-}
-QCheckBox::indicator {
-    width: 14px;
-    height: 14px;
-    background: white;
-    border: 1px solid #9aa8b8;
-    border-radius: 3px;
-}
-QCheckBox::indicator:hover {
-    border: 1px solid #1f7ae0;
-}
-QCheckBox::indicator:checked {
-    background: #1f7ae0;
-    border: 1px solid #1f7ae0;
 }
 QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QTableWidget {
     background: white;

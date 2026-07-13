@@ -7,6 +7,12 @@ from lib.language_config import load_language_configurations
 from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, ensure_data_dirs
 from lib.tts_providers import get_tts_provider
 
+
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="backslashreplace", line_buffering=True)
+
+
 ensure_data_dirs()
 
 try:
@@ -28,7 +34,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--csv",
-    help="Specific CSV file in the user-data input folder. If not provided, imports all CSVs there."
+    action="append",
+    help="Specific CSV file in the user-data input folder. Repeat to import multiple files. If not provided, imports all CSVs there."
 )
 parser.add_argument(
     "--test",
@@ -39,7 +46,7 @@ args = parser.parse_args()
 
 LANGUAGE = args.language.lower()
 SOURCE = args.source
-CUSTOM_CSV = args.csv
+CUSTOM_CSVS = args.csv or []
 TEST_MODE = args.test
 
 # Validate language
@@ -66,8 +73,8 @@ if not DB_FILE.exists():
     sys.exit(1)
 
 # Get CSV files to process
-if CUSTOM_CSV:
-    csv_files = [INPUT_DIR / CUSTOM_CSV]
+if CUSTOM_CSVS:
+    csv_files = [INPUT_DIR / csv_name for csv_name in CUSTOM_CSVS]
 else:
     csv_files = list(INPUT_DIR.glob("*.csv"))
 
@@ -149,6 +156,7 @@ def import_csv(csv_file: Path):
     existing_fronts = load_existing_fronts(cursor, incoming_fronts)
 
     for row in rows:
+        flashcard_id = None
         try:
             # Use standardized column names
             target_text = row.get("Front", "").strip()
@@ -193,6 +201,9 @@ def import_csv(csv_file: Path):
             existing_fronts.add(target_text)
 
         except Exception as e:
+            if flashcard_id is not None:
+                cursor.execute("DELETE FROM flashcards WHERE id = ?", (flashcard_id,))
+                conn.commit()
             print(f"  ERROR: {e}")
             failed_count += 1
             continue

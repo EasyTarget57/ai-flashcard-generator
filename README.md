@@ -176,16 +176,18 @@ No sé.,I don't know.
 
 Guidelines:
 
-- Prefer useful beginner vocabulary.
-- Keep approximately 15–30 vocabulary cards.
-- Keep approximately 15–30 sentence cards.
-- Remove duplicate sentences.
-- Preserve natural language.
-- **Front**: Target language text (required)
-- **Back**: English translation (required)
-- **Pronunciation**: Optional (Romaji for Japanese, IPA for other languages, omit if not applicable)
-- **Notes**: Optional metadata (e.g., noun, verb, context)
-- Return valid CSV only.
+- Front: text in the language being learned.
+- Back: English translation.
+- Pronunciation is optional. Use romaji for Japanese. Leave it empty if not needed.
+- Notes is optional and may contain useful context such as noun, verb, grammar, or usage notes.
+- Extract useful vocabulary from the source material.
+- Prefer the base/dictionary form of verbs for vocabulary cards.
+- Ignore filler words and unnecessary repetition.
+- Remove duplicate cards.
+- Preserve natural sentences from the source material when useful.
+- You may also create natural example sentences that demonstrate vocabulary in different contexts.
+- Prefer useful, natural flashcards over trying to reach a specific number of cards.
+- Return valid CSV.
 
 ---
 

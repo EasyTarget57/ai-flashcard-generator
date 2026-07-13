@@ -1,0 +1,163 @@
+Yes — but I wouldn't call it a tooltip. This is too much information for a tooltip.
+
+I think a “How to create the CSVs” guide is perfect here.
+
+Looking at your screen, I'd put it directly above Source, under the title:
+
+Import Flashcards
+Use AI to turn videos, notes, or class documents into importable CSV files.
+[ How to create CSVs ]
+
+Clicking it opens a modal or side panel.
+
+My suggested guide
+How to create your CSV files
+
+You can use ChatGPT or another AI assistant to create the CSV files for you.
+
+1. Prepare your source material
+
+Choose any learning material:
+
+🎬 Video subtitles or transcripts
+📷 Photos of class notes
+📄 PDF or Word class materials
+📝 Copied text or lesson notes
+
+For YouTube videos, download or copy the subtitles as plain text first.
+
+2. Give the material to an AI assistant
+
+Upload or paste your source material into ChatGPT or another AI assistant.
+
+Then use this prompt:
+
+[Copy prompt]
+
+Create flashcards from the provided learning material for someone learning [LANGUAGE].
+
+Generate two CSV files: vocabulary.csv and sentences.csv.
+
+vocabulary.csv:
+Front,Back,Pronunciation,Notes
+
+sentences.csv:
+Front,Back,Pronunciation
+
+Guidelines:
+- Front: text in the language being learned.
+- Back: English translation.
+- Pronunciation is optional. Use romaji for Japanese. Leave it empty if not needed.
+- Notes is optional and may contain useful context such as noun, verb, grammar, or usage notes.
+- Extract useful vocabulary from the source material.
+- Prefer the base/dictionary form of verbs for vocabulary cards.
+- Ignore filler words and unnecessary repetition.
+- Remove duplicate cards.
+- Preserve natural sentences from the source material when useful.
+- You may also create natural example sentences that demonstrate vocabulary in different contexts.
+- Prefer useful, natural flashcards over trying to reach a specific number of cards.
+- Return valid CSV.
+3. Paste the CSVs here
+
+Copy the contents of vocabulary.csv and sentences.csv into the corresponding fields and click Submit.
+
+I would explicitly show the three workflows
+
+I actually think this is important because your three use cases demonstrate the power of the app really well.
+
+Maybe at the top of the modal:
+
+What are you importing?
+
+🎬 Video | 📷 Notes | 📄 Class documents
+
+Then show a small explanation depending on the selection.
+
+🎬 Video
+
+Download or copy the subtitles/transcript as plain text. Give the transcript to an AI assistant and ask it to create the two CSV files.
+
+📷 Notes
+
+Take photos of your notes and upload them to an AI assistant. Ask it to extract vocabulary and create natural example sentences in different contexts.
+
+📄 PDF or Word
+
+Upload your class materials to an AI assistant and ask it to extract useful vocabulary and sentences for flashcards.
+
+The prompt can dynamically change slightly.
+
+For notes, for example:
+
+Create natural example sentences that demonstrate the extracted vocabulary in different contexts.
+
+For video:
+
+Prefer sentences actually used in the transcript.
+
+This matches exactly how you currently use it.
+
+I would remove the 15–30 limit
+
+Definitely.
+
+I think your new rule is much better:
+
+Prefer useful, natural flashcards over trying to reach a specific number of cards.
+
+The 15–30 instruction can cause an LLM to:
+
+ignore useful vocabulary because it already reached 30
+invent weak cards to reach 15
+arbitrarily select cards
+
+For a 5-minute beginner CI video, maybe there are 18 useful words. Fine.
+
+For a 30-page class PDF, maybe there are 120. Also fine.
+
+The user can review/delete cards on your Flashcards screen afterwards. That's actually one of the advantages of the UI you're building.
+
+Small UI suggestion
+
+I would change this:
+
+vocabulary.csv
+Paste vocabulary.csv here...
+
+to:
+
+Vocabulary CSV Front, Back, Pronunciation, Notes
+Paste CSV content here...
+
+And:
+
+Sentence CSV Front, Back, Pronunciation
+
+The current placeholder showing the schema is slightly repetitive.
+
+My preferred layout
+Import Flashcards                         Language: Japanese
+
+Turn videos, notes, or class materials into flashcards.
+[ How to create CSVs ]
+
+☐ Test mode
+
+Source
+[____________________________________________]
+
+Vocabulary CSV
+Front, Back, Pronunciation, Notes
+[                                             ]
+[                                             ]
+
+Sentence CSV
+Front, Back, Pronunciation
+[                                             ]
+[                                             ]
+
+                                      [ Import ]
+
+Also: I would rename Submit → Import or Import Flashcards. Much clearer.
+
+Honestly, I think the guide + Copy prompt button is enough for v1. I would not build direct PDF/image/AI integration yet. Your current architecture has a very nice separation: AI prepares structured CSV → your application validates, generates audio, stores cards, and exports Anki.

@@ -15,8 +15,11 @@
   },
   "spanish": {
     "name": "Spanish",
-    "tts_provider": "openai",
-    "tts_voice": "nova",
+    "tts_provider": "edge",
+    "tts_voice": "es-ES-ElviraNeural",
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "instructions": "Speak naturally in standard Spanish. Use clear pronunciation suitable for a beginner learning Spanish.",
     "model_name": "Spanish Model",
     "csv_files": [
@@ -26,8 +29,11 @@
   },
   "french": {
     "name": "French",
-    "tts_provider": "openai",
-    "tts_voice": "shimmer",
+    "tts_provider": "edge",
+    "tts_voice": "fr-FR-DeniseNeural",
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "instructions": "Speak naturally in standard French. Use clear pronunciation suitable for a beginner learning French.",
     "model_name": "French Model",
     "csv_files": [
@@ -37,9 +43,11 @@
   },
   "vietnamese": {
     "name": "Vietnamese",
-    "tts_provider": "fptai",
-    "tts_voice": "std_hatieumai",
-    "tts_speed": 0.85,
+    "tts_provider": "edge",
+    "tts_voice": "vi-VN-HoaiMyNeural",
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "instructions": "Speak naturally in southern Vietnamese (Saigon dialect). Use a clear southern accent and natural pacing. Keep pronunciation clear for learners.",
     "model_name": "Vietnamese Model",
     "csv_files": [
@@ -49,8 +57,11 @@
   },
   "english": {
     "name": "English",
-    "tts_provider": "openai",
-    "tts_voice": "alloy",
+    "tts_provider": "edge",
+    "tts_voice": "en-US-JennyNeural",
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "instructions": "Speak naturally in standard English. Use clear pronunciation suitable for language learners.",
     "model_name": "English Model",
     "csv_files": [
