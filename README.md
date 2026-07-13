@@ -5,7 +5,7 @@ Generate Anki flashcards with high-quality AI-generated audio for multiple langu
 Currently supports:
 - Vocabulary flashcards
 - Sentence flashcards
-- OpenAI and FPT.AI Text-to-Speech
+- OpenAI, FPT.AI, and Microsoft Edge Text-to-Speech
 - Anki `.apkg` generation
 - **Multi-language support** (Japanese, Spanish, French, and more)
 - **Database storage** (SQLite with auto-generated card IDs)
@@ -35,6 +35,12 @@ and set it as the following environment variable:
 FPTAI_API_KEY
 ```
 
+### Japanese (Edge TTS)
+
+Japanese audio uses the `edge-tts` Python package by default. It does not require
+an API key, but it does require internet access to Microsoft's Edge online TTS
+service.
+
 ---
 
 ## 2. Python
@@ -46,7 +52,7 @@ Python 3.11+ is recommended.
 ## 3. Install dependencies
 
 ```
-pip install openai genanki requests
+pip install openai genanki requests edge-tts
 ```
 
 or
@@ -245,6 +251,23 @@ python create_flashcards.py --language french
 
 ---
 
+## Optional - Regenerate existing audio
+
+To regenerate audio for existing cards after changing a language's TTS provider
+or voice:
+
+```bash
+python regenerate_audio.py --language japanese --force
+```
+
+Use `--dry-run` first to preview the affected cards:
+
+```bash
+python regenerate_audio.py --language japanese --force --dry-run
+```
+
+---
+
 ## Step 6 - Generate the Anki deck
 
 Run the deck generation script:
@@ -314,7 +337,11 @@ Edit `languages.json` to add new languages or modify existing ones:
 {
   "japanese": {
     "name": "Japanese",
-    "voice": "coral",
+    "tts_provider": "edge",
+    "tts_voice": "ja-JP-NanamiNeural",
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "instructions": "Speak naturally in standard Japanese...",
     "model_name": "Japanese Model",
     "csv_files": ["vocabulary.csv", "sentences.csv"]
@@ -324,10 +351,23 @@ Edit `languages.json` to add new languages or modify existing ones:
 
 ### Configuration Fields:
 - **name**: Display name for the deck
-- **voice**: OpenAI voice to use (coral, nova, shimmer, etc.)
+- **tts_provider**: TTS backend to use (`openai`, `fptai`, or `edge`)
+- **tts_voice**: Voice name for the selected provider
+- **tts_rate**: Edge TTS speech rate, such as `+0%`, `-10%`, or `+15%`
+- **tts_volume**: Edge TTS volume, such as `+0%`, `-10%`, or `+15%`
+- **tts_pitch**: Edge TTS pitch, such as `+0Hz`, `-20Hz`, or `+20Hz`
 - **instructions**: Instructions for the text-to-speech model
 - **model_name**: Name of the Anki model
 - **csv_files**: CSV file names to process for this language
+
+For Edge TTS, list available voices with:
+
+```bash
+edge-tts --list-voices
+```
+
+Common Japanese Edge voices include `ja-JP-NanamiNeural` and
+`ja-JP-KeitaNeural`.
 
 ### CSV Format:
 All CSV files use standardized columns:

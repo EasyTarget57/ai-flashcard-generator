@@ -1,8 +1,11 @@
 {
   "japanese": {
     "name": "Japanese",
-    "tts_provider": "openai",
-    "tts_voice": "coral",
+    "tts_provider": "edge",
+    "tts_voice": "ja-JP-NanamiNeural",
+    "tts_rate": "+0%",
+    "tts_volume": "+0%",
+    "tts_pitch": "+0Hz",
     "instructions": "Speak naturally in standard Japanese. Use clear pronunciation suitable for a beginner learning Japanese.",
     "model_name": "Japanese Model",
     "csv_files": [

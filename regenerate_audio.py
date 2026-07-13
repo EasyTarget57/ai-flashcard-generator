@@ -1,4 +1,4 @@
-"""Safely regenerate audio for existing Vietnamese flashcards."""
+"""Safely regenerate audio for existing flashcards."""
 
 import argparse
 import json
@@ -9,17 +9,15 @@ import tempfile
 import time
 from pathlib import Path
 
-from lib.tts_providers import get_tts_provider
+from lib.tts_providers import get_tts_audio_extension, get_tts_provider
 
 
-LANGUAGE = "vietnamese"
 DB_FILE = Path("flashcards.db")
 CONFIG_FILE = Path("languages.json")
-AUDIO_DIR = Path("audio") / LANGUAGE
 
 
 def configure_console():
-    """Allow Vietnamese text in redirected and legacy Windows consoles."""
+    """Allow non-ASCII text in redirected and legacy Windows consoles."""
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="backslashreplace")
@@ -27,7 +25,12 @@ def configure_console():
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Regenerate audio for all existing Vietnamese flashcards"
+        description="Regenerate audio for existing flashcards"
+    )
+    parser.add_argument(
+        "--language",
+        default="vietnamese",
+        help="Language to regenerate from languages.json (default: vietnamese)",
     )
     parser.add_argument(
         "--dry-run",
@@ -37,7 +40,7 @@ def parse_args():
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Regenerate cards that already have the current WAV filename",
+        help="Regenerate cards that already have the current audio filename",
     )
     parser.add_argument(
         "--retries",
@@ -56,24 +59,28 @@ def parse_args():
         parser.error("--retries cannot be negative")
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be at least 1")
+    args.language = args.language.lower()
     return args
 
 
-def load_config():
+def load_config(language):
     if not CONFIG_FILE.exists():
         raise FileNotFoundError(f"Configuration not found: {CONFIG_FILE}")
 
     with CONFIG_FILE.open("r", encoding="utf-8") as config_file:
         languages = json.load(config_file)
 
-    if LANGUAGE not in languages:
-        raise ValueError(f"Language not configured: {LANGUAGE}")
-    return languages[LANGUAGE]
+    if language not in languages:
+        available = ", ".join(languages.keys())
+        raise ValueError(
+            f"Language not configured: {language}. Available: {available}"
+        )
+    return languages[language]
 
 
-def is_current_audio(card_id, audio_filename):
-    expected_filename = f"{card_id}.wav"
-    expected_path = AUDIO_DIR / expected_filename
+def is_current_audio(audio_dir, card_id, audio_filename, audio_extension):
+    expected_filename = f"{card_id}{audio_extension}"
+    expected_path = audio_dir / expected_filename
     return (
         audio_filename == expected_filename
         and expected_path.is_file()
@@ -107,10 +114,12 @@ def main():
         return 1
 
     try:
-        language_config = load_config()
+        language_config = load_config(args.language)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
+
+    audio_dir = Path("audio") / args.language
 
     connection = sqlite3.connect(str(DB_FILE))
     connection.row_factory = sqlite3.Row
@@ -121,18 +130,33 @@ def main():
         WHERE language = ?
         ORDER BY id
         """,
-        (LANGUAGE,),
+        (args.language,),
     ).fetchall()
+
+    provider_name = language_config.get("tts_provider", "openai")
+    try:
+        audio_extension = get_tts_audio_extension(provider_name)
+    except ValueError as error:
+        connection.close()
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
 
     pending = [
         card for card in cards
-        if args.force or not is_current_audio(card["id"], card["audio_filename"])
+        if args.force
+        or not is_current_audio(
+            audio_dir,
+            card["id"],
+            card["audio_filename"],
+            audio_extension,
+        )
     ]
     skipped = len(cards) - len(pending)
     if args.limit is not None:
         pending = pending[:args.limit]
 
-    print(f"Vietnamese cards: {len(cards)}")
+    language_name = language_config.get("name", args.language)
+    print(f"{language_name} cards: {len(cards)}")
     print(f"To regenerate: {len(pending)}")
     print(f"Already current: {skipped}")
 
@@ -148,19 +172,17 @@ def main():
         return 0
 
     try:
-        provider = get_tts_provider(
-            language_config.get("tts_provider", "openai"), language_config
-        )
+        provider = get_tts_provider(provider_name, language_config)
     except Exception as error:
         connection.close()
         print(f"Error: Failed to initialize TTS provider: {error}", file=sys.stderr)
         return 1
 
-    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    audio_dir.mkdir(parents=True, exist_ok=True)
     succeeded = 0
     failed = 0
 
-    with tempfile.TemporaryDirectory(prefix="regenerate-vietnamese-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix=f"regenerate-{args.language}-") as temp_dir:
         staging_dir = Path(temp_dir)
 
         for card in pending:
@@ -176,7 +198,7 @@ def main():
                     staging_dir,
                     args.retries,
                 )
-                final_path = AUDIO_DIR / new_filename
+                final_path = audio_dir / new_filename
                 os.replace(generated_path, final_path)
 
                 with connection:
@@ -186,11 +208,11 @@ def main():
                         SET audio_filename = ?, updated_at = CURRENT_TIMESTAMP
                         WHERE id = ? AND language = ?
                         """,
-                        (new_filename, card_id, LANGUAGE),
+                        (new_filename, card_id, args.language),
                     )
 
                 if old_filename and old_filename != new_filename:
-                    old_path = AUDIO_DIR / old_filename
+                    old_path = audio_dir / old_filename
                     if old_path.is_file():
                         old_path.unlink()
 
