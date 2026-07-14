@@ -35,11 +35,11 @@ and set it as the following environment variable:
 FPTAI_API_KEY
 ```
 
-### Japanese (Edge TTS)
+### Edge TTS
 
-Japanese audio uses the `edge-tts` Python package by default. It does not require
+By default the languages use `edge-tts` Python package. It does not require
 an API key, but it does require internet access to Microsoft's Edge online TTS
-service.
+service. If you have an API key for OpenAPI or FPT.AI, you can follow the above and check which TTS provider you like best.
 
 ---
 
