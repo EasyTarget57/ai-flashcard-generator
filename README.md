@@ -131,7 +131,56 @@ FPTAI_API_KEY
 
 # Dev information
 
-TODO: Add information about database/audio/input/output folder location. Short description of DB schema and required python dependencies.
+The application stores user data outside the git checkout using `platformdirs`.
+On Windows this is usually:
+
+```
+C:\Users\<you>\AppData\Local\FlashcardGenerator\
+```
+
+Important folders/files:
+
+```
+flashcards.db        SQLite database
+input\              temporary CSV files used during import
+audio\<language>\   generated audio files
+output\<language>\  generated Anki .apkg files
+```
+
+The main app entrypoint is:
+
+```
+python flashcard-generator.py
+```
+
+Most implementation code lives in `lib/`:
+
+- `lib/db.py`: database initialization and migrations
+- `lib/decks.py`: deck lookup, creation, and migration helpers
+- `lib/import_cards.py`: CSV import and audio generation
+- `lib/export_anki.py`: Anki `.apkg` export
+- `lib/tts_providers.py`: OpenAI, FPT.AI, and Edge TTS integrations
+- `lib/paths.py`: project and user-data paths
+
+The database has three main tables:
+
+- `language_configuration`: language-level settings such as display name, TTS provider, voice, and Anki model name
+- `decks`: decks within a language, with case-insensitive names per language
+- `flashcards`: imported cards, translations, notes, source, audio filename, test flag, and `deck_id`
+
+Install runtime dependencies:
+
+```
+pip install -r requirements.txt
+```
+
+Install developer/build dependencies:
+
+```
+pip install -r requirements-dev.txt
+```
+
+`requirements-dev.txt` contains PyInstaller and Pillow for Windows `.exe` builds.
 
 
 ---
