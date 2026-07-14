@@ -4,6 +4,7 @@ import json
 
 
 LANGUAGE_PREFIXES = {
+    "dutch": "nl-",
     "english": "en",
     "french": "fr",
     "japanese": "ja-",

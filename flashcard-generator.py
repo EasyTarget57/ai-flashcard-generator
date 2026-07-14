@@ -64,6 +64,9 @@ DEFAULT_TTS_VALUES = {
     },
 }
 LANGUAGE_PROVIDER_DEFAULTS = {
+    ("dutch", "edge"): {
+        "tts_voice": "nl-NL-FennaNeural",
+    },
     ("japanese", "edge"): {
         "tts_voice": "ja-JP-NanamiNeural",
     },
