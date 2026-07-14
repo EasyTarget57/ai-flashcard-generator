@@ -70,7 +70,7 @@ pip install -r requirements.txt
 Run the PySide6 desktop app:
 
 ```
-python app.py
+python flashcard-generator.py
 ```
 
 The UI uses the same user-data directory and scripts as the CLI workflow. It can
