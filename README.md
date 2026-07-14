@@ -460,12 +460,9 @@ CSV → create_flashcards.py → flashcards.db + MP3s → generate_apkg.py → .
 
 Future improvements include:
 
-- Integrate with FPT AI for southern vietnamese voice: https://docs.fpt.ai/docs/en/speech/api/text-to-speech.html
-- Web UI for CSV creation and management
+- Introduce decks (now everything saved by language name)
+- Open bug: Audio fails when output device changes
 - Automatic subtitle download
 - Automatic vocabulary extraction
 - Automatic translation
-- Duplicate detection
 - Incremental deck updates
-- Card review tracking
-- Multi-field language support (e.g., multiple pronunciation styles)
