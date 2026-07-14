@@ -7,9 +7,13 @@ Generate Anki flashcards with high-quality AI-generated audio for multiple langu
 https://github.com/EasyTarget57/ai-flashcard-generator/releases/download/v0.1.0-beta/AI-Flashcard-Generator-windows.zip
 - Extract the zip
 - (optionally), move the folder
-- Double click the exe
+- go to AI.Flashcard.Generator/AI Flashcard Generator/
+- Double click AI Flashcard Generator(.exe)
 
-Note: When running the exe, you will get a warning from Windows Defender because the code is not signed. I need a paid certificate to sign my code so I will not do that. Please click more and run anyway.
+Note: When running the exe, you will get a warning from Windows Defender because the code is not signed. I need a paid certificate to sign my code so I will not do that. Please click more and run anyway:
+
+
+![Flashcards screen](assets/screenshots_README/Warning_windows.png)
 
 ---
 # Usage
@@ -97,8 +101,6 @@ When this process finished (and your Anki is not open). This will open an Anki i
 ![Flashcards screen](assets/screenshots_README/Export_anki_deck.png)
 
 After import in Anki, you will have the deck. This is how it looks like. We have the audio (which auto plays) and the target language text. When you show answer you will see the translation and the pronunciation (if you added a Pronunciation column to your import).
-
-Note: for now the translation is only clearly visible in Anki light mode.
 
 ---
 
