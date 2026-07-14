@@ -57,11 +57,7 @@ Click **More info** → **Run anyway** to start the application.
 Run the application by either:
 
 - launching **AI Flashcard Generator.exe**, or
-- running:
-
-```bash
-python flashcard-generator.py
-```
+- clone the project and start with python (see development section)
 
 Select the language you want to work with using the language selector in the top-right corner of the application.
 
