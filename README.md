@@ -24,7 +24,15 @@ Select the language for which you want to generate flashcards in the top right c
 ## Flashcards
 ![Flashcards screen](assets/screenshots_README/Flashcards.png)
 
-Here you can see your flashcards. You can search and play the sound. For now there is no other functionality here yet.
+Here you can browse and search in your flashcards. 
+- You can play the audio of the flash card with the play button.
+- You can regenerate audio for a card with the second (regenerate) button.
+- You can delete a card with the last button.
+- For regenerate and delete you can select multiple cards and regenerate/delete for all at once using the buttons on the top.
+
+Notes:
+- When you delete a card, the card and audio will be removed from this program. It will no longer be in the export to Anki. However, existing cards in Anki will not be removed when we export our decks and must be removed manually in Anki. This is an Anki feature to prevent data loss.
+- You can select content of a column using ctrl+c but the text does not highlight when you double click it.
 
 ---
 
@@ -199,8 +207,6 @@ pip install -r requirements-dev.txt
 Future improvements include:
 
 - Open bug: Audio fails when output device changes
-- Support for Anki dark mode.
-- Regenerate Audio (implemented but not added to UI) and other deck management features
 - Support for creating flashcards from youtube link
 - Support for creating flashcards from documents.
 - Add export to Quizzlet
