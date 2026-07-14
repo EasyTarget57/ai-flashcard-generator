@@ -9,7 +9,7 @@ https://github.com/EasyTarget57/ai-flashcard-generator/releases/download/v0.1.0-
 - (optionally), move the folder
 - Double click the exe
 
-Note: You will get a warning from Windows Defender because the code is not signed. I need a paid certificate to sign my code so I will not do that. Please click more and run anyway.
+Note: When running the exe, you will get a warning from Windows Defender because the code is not signed. I need a paid certificate to sign my code so I will not do that. Please click more and run anyway.
 
 ---
 # Usage
