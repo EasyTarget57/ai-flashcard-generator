@@ -1,42 +1,87 @@
 # AI Flashcard Generator
 
-Generate Anki flashcards with high-quality AI-generated audio for multiple languages.
+Generate Anki flashcards with high-quality AI-generated audio.
 
-# Setup
-- Download for windows:
-https://github.com/EasyTarget57/ai-flashcard-generator/releases/download/v0.1.0-beta/AI-Flashcard-Generator-windows.zip
-- Extract the zip
-- (optionally), move the folder
-- go to AI.Flashcard.Generator/AI Flashcard Generator/
-- Double click AI Flashcard Generator(.exe)
+AI Flashcard Generator is a desktop application that helps you create Anki decks with natural-sounding text-to-speech audio. Import your own vocabulary or sentence lists, generate audio using AI, and export everything as an Anki deck.
 
-Note: When running the exe, you will get a warning from Windows Defender because the code is not signed. I need a paid certificate to sign my code so I will not do that. Please click more and run anyway:
+> ⚠️ This is an early beta release. Feedback, bug reports, and suggestions are always welcome.
 
+![Flashcards screen](assets/screenshots_README/Flashcards.png)
+
+---
+
+## Features
+
+- Generate Anki flashcards from vocabulary and sentence CSV files
+- High-quality AI-generated audio for multiple languages
+- Support for OpenAI, Edge TTS, and FPT.AI text-to-speech providers
+- Store flashcards in a local SQLite database
+- Browse, search, edit, and delete flashcards
+- Regenerate audio at any time
+- Export directly to Anki (`.apkg`)
+- Support for multiple languages and decks
+
+---
+
+# Getting Started
+
+## Download
+
+Download the latest Windows release:
+
+https://github.com/EasyTarget57/ai-flashcard-generator/releases/download/v0.1.1-beta/AI-Flashcard-Generator-windows.zip
+
+## Installation
+
+1. Download the ZIP file.
+2. Extract it.
+3. (Optional) Move the extracted folder to your preferred location.
+4. Open the folder.
+5. Double-click **AI Flashcard Generator.exe**.
+
+### Windows Defender Warning
+
+Because the application is currently unsigned, Windows Defender will display a security warning the first time you run it.
+
+This is expected. Code signing certificates are expensive, so they are not currently used for this hobby project.
+
+Click **More info** → **Run anyway** to start the application.
 
 ![Flashcards screen](assets/screenshots_README/Warning_windows.png)
 
 ---
+
 # Usage
 
-Run the PySide6 desktop app (from .exe or by running):
+Run the application by either:
 
-```
+- launching **AI Flashcard Generator.exe**, or
+- running:
+
+```bash
 python flashcard-generator.py
 ```
-Select the language for which you want to generate flashcards in the top right corner.
+
+Select the language you want to work with using the language selector in the top-right corner of the application.
 
 ## Flashcards
+
 ![Flashcards screen](assets/screenshots_README/Flashcards.png)
 
-Here you can browse and search in your flashcards. 
-- You can play the audio of the flash card with the play button.
-- You can regenerate audio for a card with the second (regenerate) button.
-- You can delete a card with the last button.
-- For regenerate and delete you can select multiple cards and regenerate/delete for all at once using the buttons on the top.
+The **Flashcards** page lets you browse, search, and manage all flashcards stored in the local database.
 
-Notes:
-- When you delete a card, the card and audio will be removed from this program. It will no longer be in the export to Anki. However, existing cards in Anki will not be removed when we export our decks and must be removed manually in Anki. This is an Anki feature to prevent data loss.
-- You can select content of a column using ctrl+c but the text does not highlight when you double click it.
+### Available actions
+
+- ▶️ **Play audio** for a flashcard.
+- 🔄 **Regenerate audio** for one or more selected flashcards.
+- 🗑️ **Delete** one or more selected flashcards.
+
+You can select multiple flashcards and use the toolbar buttons to regenerate or delete them in a single operation.
+
+### Notes
+
+- Deleting a flashcard removes it from this application and future Anki exports. Existing copies in Anki are **not** deleted automatically and must be removed manually. This behavior is intentional and prevents accidental data loss in Anki.
+- You can copy cell contents using **Ctrl+C**. Double-clicking a cell does not highlight its text.
 
 ---
 
@@ -44,41 +89,54 @@ Notes:
 
 ![Flashcards screen](assets/screenshots_README/Import.png)
 
-This is the main screen for creating new flashcards using sentences and/or single words. You can put CSV in the vocabulary and/or sentences section then click the import button at the bottom. This creates the audio for the flashcards and saves them to the local database.
+The **Import** page is used to create new flashcards from vocabulary and sentence CSV files.
 
-At the top you can type the deck name (so the name that will be used for the Anki export). If you leave this empty the name of the language is used. You can also input a source. This will be saved to DB so you can easily find all vocabulary for your import.
+Paste the contents of your CSV files into the appropriate text boxes and click **Import**. The application generates audio for every flashcard and stores everything in the local database.
 
-You need to make sure the first line in the textbox is the columns (examples below). You can click the "How to create CSVs" button on the top right to get some more information on how to create these CSVs using AI.
+### Import options
 
-In future releases we will simplify this process.
+At the top of the page you can configure:
 
-**Vocabulary CSV** (`vocabulary.csv`):
+- **Deck Name** – The name of the Anki deck that will be created during export. If left empty, the language name is used.
+- **Source** *(optional)* – A label such as a YouTube video, textbook chapter, or lesson name. This makes it easy to find related flashcards later.
+
+The first row of each CSV must contain the column names shown in the examples below.
+
+Need help creating CSV files? Click **How to create CSVs** in the top-right corner. The guide explains how to use ChatGPT or other AI tools to generate correctly formatted CSV files.
+
+> **Note:** The import workflow will be simplified in future releases.
+
+### Vocabulary CSV (`vocabulary.csv`)
 
 Example for Japanese:
-```
+
+```csv
 Front,Back,Pronunciation,Notes
 ハサミ,scissors,hasami,noun
 紙,paper,kami,noun
 ```
 
 Example for Vietnamese (no pronunciation):
-```
+
+```csv
 Front,Back,Notes
 cái kéo,scissors,noun
 tờ giấy,paper,noun
 ```
 
-**Sentences CSV** (`sentences.csv`):
+### Sentences CSV (`sentences.csv`)
 
 Example for Japanese:
-```
+
+```csv
 Front,Back,Pronunciation
 これは何ですか。,What is this?,Kore wa nan desu ka?
 わかりません。,I don't know.,Wakarimasen.
 ```
 
 Example for Spanish (no pronunciation):
-```
+
+```csv
 Front,Back
 ¿Qué es esto?,What is this?
 No sé.,I don't know.
@@ -90,17 +148,26 @@ No sé.,I don't know.
 
 ![Flashcards screen](assets/screenshots_README/Export.png)
 
-This screen allows you to export your flashcards to Anki. Note that your Anki desktop app should be closed when exporting. Otherwise the generated deck will not open in Anki (for import).
+The **Export** page creates an Anki deck (`.apkg`) from the flashcards stored in the selected deck.
 
-You just select the deck you want to export from the list and click the "Export to Anki" button at the bottom right.
+> **Important:** Close Anki before exporting. If Anki is already running, the generated deck cannot be opened automatically after export.
+
+To export a deck:
+
+1. Select the deck from the list.
+2. Click **Export to Anki**.
 
 ![Flashcards screen](assets/screenshots_README/Export_result.png)
 
-When this process finished (and your Anki is not open). This will open an Anki import dialog.
+When the export is complete, the application automatically opens the generated deck in Anki (if Anki is not already running).
 
 ![Flashcards screen](assets/screenshots_README/Export_anki_deck.png)
 
-After import in Anki, you will have the deck. This is how it looks like. We have the audio (which auto plays) and the target language text. When you show answer you will see the translation and the pronunciation (if you added a Pronunciation column to your import).
+After importing the deck into Anki:
+
+- The front of each card displays the target language text and automatically plays the audio.
+- The back of the card displays the translation.
+- If a **Pronunciation** column was included during import, it is also shown on the back of the card.
 
 ---
 
@@ -108,107 +175,135 @@ After import in Anki, you will have the deck. This is how it looks like. We have
 
 ![Flashcards screen](assets/screenshots_README/Settings_edge.png)
 
-In Settings you can configure your TTS (text to speech) provider. Note that edge is the only free option. For OpenAI or FPT.AI you need to have an API key and set it to your environment variables.
+The **Settings** page allows you to configure the text-to-speech (TTS) provider for each language.
 
-You can input some text in your target language and click "Generate Test Audio" to test your settings. If it's good you can click "Save Settings" at the bottom right.
+Currently supported providers are:
 
-For Edge TTS there is a dropdown with the selected voices. For OpenAI and FPT.AI you will need to check the options on google.
+- **Edge TTS** *(free)*
+- **OpenAI**
+- **FPT.AI**
+
+OpenAI and FPT.AI require an API key configured as an environment variable.
+
+To verify your configuration:
+
+1. Enter some text in the target language.
+2. Click **Generate Test Audio**.
+3. If the result sounds correct, click **Save Settings**.
+
+For Edge TTS you can simply choose a voice from the dropdown list.
+
+For OpenAI and FPT.AI, select the desired voice according to the provider's documentation.
 
 ![Flashcards screen](assets/screenshots_README/Settings_fptai.png)
 
-Example settings for FPT.AI (requires key).
+Example configuration for FPT.AI.
 
 # Requirements
 
 ## 1. Anki
 
-This project only supports export to Anki now so make sure Anki is installed. 
+This application currently exports flashcards only to Anki, so Anki Desktop must be installed.
 
 https://apps.ankiweb.net/
 
 ## 2. API Keys (Optional)
 
+Some text-to-speech providers require an API key.
+
 ### OpenAI
 
-OpenAI-backed languages require an OpenAI API key in the following environment variable:
+Languages that use OpenAI TTS require the following environment variable:
 
-```
+```text
 OPENAI_API_KEY
 ```
 
 ### Vietnamese (FPT.AI)
 
-Vietnamese audio uses FPT.AI. Copy your API key from the
-[FPT Marketplace API Keys page](https://marketplace.fptcloud.com/en/my-account?tab=my-api-key)
-and set it as the following environment variable:
+Vietnamese audio uses FPT.AI.
 
-```
+Copy your API key from the
+[FPT Marketplace API Keys page](https://marketplace.fptcloud.com/en/my-account?tab=my-api-key)
+and set the following environment variable:
+
+```text
 FPTAI_API_KEY
 ```
 
 ---
 
-# Dev information
+# Development
 
-The application stores user data outside the git checkout using `platformdirs`.
-On Windows this is usually:
+The application stores user data outside the project directory using `platformdirs`.
 
-```
-C:\Users\<you>\AppData\Local\FlashcardGenerator\
-```
+On Windows this is typically:
 
-Important folders/files:
-
-```
-flashcards.db        SQLite database
-input\              temporary CSV files used during import
-audio\<language>\   generated audio files
-output\<language>\  generated Anki .apkg files
+```text
+C:\Users\<your username>\AppData\Local\FlashcardGenerator\
 ```
 
-The main app entrypoint is:
+## Important files and folders
 
+```text
+flashcards.db         SQLite database
+input\                Temporary CSV files used during import
+audio\<language>\     Generated audio files
+output\<language>\    Generated Anki (.apkg) files
 ```
+
+## Running the application
+
+```bash
 python flashcard-generator.py
 ```
 
-Most implementation code lives in `lib/`:
+## Project structure
 
-- `lib/db.py`: database initialization and migrations
-- `lib/decks.py`: deck lookup, creation, and migration helpers
-- `lib/import_cards.py`: CSV import and audio generation
-- `lib/export_anki.py`: Anki `.apkg` export
-- `lib/tts_providers.py`: OpenAI, FPT.AI, and Edge TTS integrations
-- `lib/paths.py`: project and user-data paths
+Most of the implementation lives in the `lib/` directory.
 
-The database has three main tables:
+| File | Description |
+|------|-------------|
+| `lib/db.py` | Database initialization and schema migrations |
+| `lib/decks.py` | Deck creation, lookup, and migration helpers |
+| `lib/import_cards.py` | CSV import and audio generation |
+| `lib/export_anki.py` | Anki `.apkg` export |
+| `lib/tts_providers.py` | OpenAI, Edge TTS, and FPT.AI integrations |
+| `lib/paths.py` | Project and user-data paths |
 
-- `language_configuration`: language-level settings such as display name, TTS provider, voice, and Anki model name
-- `decks`: decks within a language, with case-insensitive names per language
-- `flashcards`: imported cards, translations, notes, source, audio filename, test flag, and `deck_id`
+## Database
 
-Install runtime dependencies:
+The application uses three main tables:
 
-```
+| Table | Purpose |
+|-------|----------|
+| `language_configuration` | Language settings such as display name, TTS provider, voice, and Anki model |
+| `decks` | Decks within a language (case-insensitive per language) |
+| `flashcards` | Flashcards, translations, notes, source, audio filename, test flag, and `deck_id` |
+
+## Installing dependencies
+
+Runtime dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-Install developer/build dependencies:
+Development dependencies:
 
-```
+```bash
 pip install -r requirements-dev.txt
 ```
 
-`requirements-dev.txt` contains PyInstaller and Pillow for Windows `.exe` builds.
-
+`requirements-dev.txt` contains tools required to build the Windows executable, including PyInstaller and Pillow.
 
 ---
 
 # Roadmap
 
-Future improvements include:
+Planned improvements include:
 
-- Open bug: Audio fails when output device changes
-- Support for creating flashcards from youtube link
-- Support for creating flashcards from documents.
-- Add export to Quizzlet
+- Fix audio playback when the output device changes
+- Import flashcards directly from YouTube videos
+- Import flashcards from PDF and Word documents
+- Export to Quizlet
