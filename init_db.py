@@ -2,6 +2,7 @@ import json
 import sqlite3
 
 from lib.paths import DB_FILE, PROJECT_ROOT, ensure_data_dirs, migrate_repo_data_to_user_data
+from lib.decks import ensure_deck_schema
 
 
 LANGUAGES_FILE = PROJECT_ROOT / "languages.json"
@@ -85,7 +86,7 @@ def seed_language_configuration(cursor):
 
     return inserted
 
-def init_database():
+def init_database(verbose=True):
     """Initialize the flashcards database."""
     moved, skipped = migrate_repo_data_to_user_data()
     ensure_data_dirs()
@@ -123,16 +124,18 @@ def init_database():
 
     create_language_configuration_table(cursor)
     seeded_languages = seed_language_configuration(cursor)
+    ensure_deck_schema(cursor)
 
     conn.commit()
     conn.close()
-    print(f"Database initialized: {DB_FILE}")
-    for source, destination in moved:
-        print(f"Moved {source} -> {destination}")
-    for source, destination in skipped:
-        print(f"Skipped existing user data for {source}; kept repo copy at {source}")
-    if seeded_languages:
-        print(f"Seeded language configuration rows: {seeded_languages}")
+    if verbose:
+        print(f"Database initialized: {DB_FILE}")
+        for source, destination in moved:
+            print(f"Moved {source} -> {destination}")
+        for source, destination in skipped:
+            print(f"Skipped existing user data for {source}; kept repo copy at {source}")
+        if seeded_languages:
+            print(f"Seeded language configuration rows: {seeded_languages}")
 
 if __name__ == "__main__":
     init_database()

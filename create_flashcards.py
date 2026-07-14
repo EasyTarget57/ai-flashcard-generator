@@ -3,6 +3,8 @@ import csv
 import sys
 import argparse
 from pathlib import Path
+from init_db import init_database
+from lib.decks import default_deck_name, ensure_deck_schema, get_or_create_deck, normalized_deck_name
 from lib.language_config import load_language_configurations
 from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, ensure_data_dirs
 from lib.tts_providers import get_tts_provider
@@ -33,6 +35,10 @@ parser.add_argument(
     help="Source identifier (e.g., YouTube video ID)"
 )
 parser.add_argument(
+    "--deck",
+    help="Deck name. If omitted or empty, the language name is used."
+)
+parser.add_argument(
     "--csv",
     action="append",
     help="Specific CSV file in the user-data input folder. Repeat to import multiple files. If not provided, imports all CSVs there."
@@ -46,6 +52,7 @@ args = parser.parse_args()
 
 LANGUAGE = args.language.lower()
 SOURCE = args.source
+DECK_NAME = normalized_deck_name(args.deck)
 CUSTOM_CSVS = args.csv or []
 TEST_MODE = args.test
 
@@ -71,6 +78,8 @@ if not DB_FILE.exists():
     print(f"Error: Database not found: {DB_FILE}")
     print("Please run: python init_db.py")
     sys.exit(1)
+
+init_database(verbose=False)
 
 # Get CSV files to process
 if CUSTOM_CSVS:
@@ -105,10 +114,14 @@ def ensure_indexes(cursor: sqlite3.Cursor) -> None:
         CREATE INDEX IF NOT EXISTS idx_flashcards_language_target_text
         ON flashcards (language, target_language_text)
     """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_flashcards_deck_target_text
+        ON flashcards (deck_id, target_language_text)
+    """)
 
 
-def load_existing_fronts(cursor: sqlite3.Cursor, target_texts: set[str]) -> set[str]:
-    """Load existing front text matching incoming rows for the selected language."""
+def load_existing_fronts(cursor: sqlite3.Cursor, target_texts: set[str], deck_id: int) -> set[str]:
+    """Load existing front text matching incoming rows for the selected language and deck."""
     if not target_texts:
         return set()
 
@@ -124,16 +137,17 @@ def load_existing_fronts(cursor: sqlite3.Cursor, target_texts: set[str]) -> set[
             SELECT target_language_text
             FROM flashcards
             WHERE language = ?
+              AND deck_id = ?
               AND target_language_text IN ({placeholders})
             """,
-            (LANGUAGE, *chunk)
+            (LANGUAGE, deck_id, *chunk)
         )
         existing_fronts.update(row[0] for row in cursor.fetchall())
 
     return existing_fronts
 
 
-def import_csv(csv_file: Path):
+def import_csv(csv_file: Path, deck_id: int):
     """Import CSV file into database and generate audio."""
     csv_type = csv_file.stem  # filename without extension
 
@@ -144,6 +158,7 @@ def import_csv(csv_file: Path):
 
     conn = sqlite3.connect(str(DB_FILE))
     cursor = conn.cursor()
+    ensure_deck_schema(cursor)
     ensure_indexes(cursor)
     conn.commit()
 
@@ -153,7 +168,7 @@ def import_csv(csv_file: Path):
 
     incoming_fronts = {row.get("Front", "").strip() for row in rows}
     incoming_fronts.discard("")
-    existing_fronts = load_existing_fronts(cursor, incoming_fronts)
+    existing_fronts = load_existing_fronts(cursor, incoming_fronts, deck_id)
 
     for row in rows:
         flashcard_id = None
@@ -170,16 +185,16 @@ def import_csv(csv_file: Path):
                 continue
 
             if target_text in existing_fronts:
-                print(f"  SKIP: Duplicate Front for {LANGUAGE}: {target_text}")
+                print(f"  SKIP: Duplicate Front for {LANGUAGE} / deck {deck_id}: {target_text}")
                 skipped_count += 1
                 continue
 
             # Insert into database
             cursor.execute("""
                 INSERT INTO flashcards
-                (language, type, target_language_text, translation, pronunciation, source, notes, test)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (LANGUAGE, csv_type, target_text, translation, pronunciation, SOURCE, notes, TEST_MODE))
+                (language, type, target_language_text, translation, pronunciation, source, notes, deck_id, test)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (LANGUAGE, csv_type, target_text, translation, pronunciation, SOURCE, notes, deck_id, TEST_MODE))
 
             conn.commit()
 
@@ -231,11 +246,21 @@ def main():
     if SOURCE:
         print(f"Source: {SOURCE}\n")
 
+    conn = sqlite3.connect(str(DB_FILE))
+    cursor = conn.cursor()
+    ensure_deck_schema(cursor)
+    deck = get_or_create_deck(cursor, LANGUAGE, DECK_NAME or default_deck_name(LANG_CONFIG))
+    conn.commit()
+    conn.close()
+    deck_id = deck[0]
+    deck_name = deck[2]
+    print(f"Deck: {deck_name}\n")
+
     total_imported = 0
     total_failed = 0
 
     for csv_file in csv_files:
-        imported, failed = import_csv(csv_file)
+        imported, failed = import_csv(csv_file, deck_id)
         total_imported += imported
         total_failed += failed
 

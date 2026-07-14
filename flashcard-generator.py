@@ -1,4 +1,5 @@
 import csv
+import re
 import sqlite3
 import sys
 import tempfile
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from edge_voices import list_edge_voice_names
 from init_db import init_database
+from lib.decks import list_decks
 from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, OUTPUT_ROOT, ensure_data_dirs
 from lib.tts_providers import get_tts_provider
 
@@ -137,8 +139,7 @@ def utf8_process_environment():
 
 def ensure_database():
     ensure_data_dirs()
-    if not DB_FILE.exists():
-        init_database()
+    init_database(verbose=False)
 
 
 def connect_db():
@@ -258,6 +259,11 @@ def open_export_output(output):
         "Open Failed",
         f"Could not open the generated deck or output folder:\n{output}",
     )
+
+
+def safe_filename(name):
+    filename = re.sub(r'[<>:"/\\|?*]+', "_", name).strip()
+    return filename or "deck"
 
 
 class ProcessDialog(QDialog):
@@ -590,6 +596,7 @@ class FlashcardsPage(BasePage):
         ("translation", "Back"),
         ("pronunciation", "Pronunciation"),
         ("notes", "Notes"),
+        ("deck_name", "Deck"),
         ("source", "Source"),
     ]
 
@@ -597,7 +604,7 @@ class FlashcardsPage(BasePage):
         super().__init__(app_window, "Flashcards")
         filters = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search Front, Back, Pronunciation, Notes, Source...")
+        self.search.setPlaceholderText("Search Front, Back, Pronunciation, Notes, Deck, Source...")
         self.search.textChanged.connect(self.load_cards)
         filters.addWidget(self.search)
         clear = QPushButton("Clear")
@@ -647,24 +654,25 @@ class FlashcardsPage(BasePage):
         if not language:
             return
         search = f"%{self.search.text().strip()}%"
-        where = "language = ?"
+        where = "f.language = ?"
         params = [language]
         if self.search.text().strip():
             where += """
                 AND (
                     target_language_text LIKE ? OR translation LIKE ? OR
-                    pronunciation LIKE ? OR notes LIKE ? OR source LIKE ?
+                    pronunciation LIKE ? OR notes LIKE ? OR d.name LIKE ? OR source LIKE ?
                 )
             """
-            params.extend([search] * 5)
+            params.extend([search] * 6)
         with connect_db() as connection:
             rows = connection.execute(
                 f"""
-                SELECT id, target_language_text, translation, pronunciation, notes,
-                       source, audio_filename
-                FROM flashcards
+                SELECT f.id, target_language_text, translation, pronunciation, notes,
+                       COALESCE(d.name, '') AS deck_name, source, audio_filename
+                FROM flashcards f
+                LEFT JOIN decks d ON d.id = f.deck_id
                 WHERE {where}
-                ORDER BY id DESC
+                ORDER BY f.id DESC
                 LIMIT 500
                 """,
                 params,
@@ -714,6 +722,11 @@ class ImportPage(BasePage):
         self.root_layout.addWidget(QLabel("Source"))
         self.root_layout.addWidget(self.source)
 
+        self.deck = QLineEdit()
+        self.deck.setPlaceholderText("Optional deck name; empty uses the language name")
+        self.root_layout.addWidget(QLabel("Deck"))
+        self.root_layout.addWidget(self.deck)
+
         self.vocabulary = QPlainTextEdit()
         self.vocabulary.setPlaceholderText("Paste CSV content here...")
         self.sentences = QPlainTextEdit()
@@ -761,6 +774,8 @@ class ImportPage(BasePage):
         command = [PYTHON, "create_flashcards.py", "--language", language]
         if self.source.text().strip():
             command.extend(["--source", self.source.text().strip()])
+        if self.deck.text().strip():
+            command.extend(["--deck", self.deck.text().strip()])
         for path in files:
             command.extend(["--csv", path.name])
         self.run_import_commands([command])
@@ -769,6 +784,7 @@ class ImportPage(BasePage):
         dialog = MultiProcessDialog("Import Result", commands, self)
         dialog.exec()
         self.app_window.flashcards_page.load_cards()
+        self.app_window.export_page.load_decks()
 
 
 class ExportPage(BasePage):
@@ -777,6 +793,9 @@ class ExportPage(BasePage):
         note = QLabel("Create an Anki package from the imported flashcards for the selected language.")
         note.setObjectName("InfoLabel")
         self.root_layout.addWidget(note)
+        self.deck_combo = QComboBox()
+        self.root_layout.addWidget(QLabel("Deck"))
+        self.root_layout.addWidget(self.deck_combo)
         self.root_layout.addStretch()
         self.export_button = QPushButton("Export to Anki")
         self.export_button.clicked.connect(self.export_deck)
@@ -784,13 +803,32 @@ class ExportPage(BasePage):
         footer.addStretch()
         footer.addWidget(self.export_button)
         self.root_layout.addLayout(footer)
+        self.language_combo.currentIndexChanged.connect(self.load_decks)
+
+    def refresh_languages(self):
+        super().refresh_languages()
+        self.load_decks()
+
+    def load_decks(self):
+        language = self.current_language()
+        self.deck_combo.blockSignals(True)
+        self.deck_combo.clear()
+        if language:
+            with connect_db() as connection:
+                for deck in list_decks(connection, language):
+                    self.deck_combo.addItem(deck["name"], deck["id"])
+        self.deck_combo.blockSignals(False)
+        self.export_button.setEnabled(self.deck_combo.count() > 0)
 
     def export_deck(self):
         language = self.current_language()
-        config = self.current_language_config()
-        command = [PYTHON, "generate_apkg.py", "--language", language]
-        deck_name = config["name"]
-        output = OUTPUT_ROOT / language / f"{deck_name}.apkg"
+        deck_id = self.deck_combo.currentData()
+        deck_name = self.deck_combo.currentText()
+        if deck_id is None:
+            QMessageBox.information(self, "No Deck", "No deck exists for the selected language.")
+            return
+        command = [PYTHON, "generate_apkg.py", "--language", language, "--deck-id", str(deck_id)]
+        output = OUTPUT_ROOT / language / f"{safe_filename(deck_name)}.apkg"
         dialog = ProcessDialog(
             "Export Result",
             command,
@@ -1221,6 +1259,7 @@ class MainWindow(QMainWindow):
                 page.language_combo.blockSignals(True)
                 page.language_combo.setCurrentIndex(index)
                 page.language_combo.blockSignals(False)
+        self.export_page.load_decks()
 
     def select_page(self, index):
         self.stack.setCurrentIndex(index)
