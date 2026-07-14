@@ -194,3 +194,4 @@ Future improvements include:
 - Regenerate Audio (implemented but not added to UI) and other deck management features
 - Support for creating flashcards from youtube link
 - Support for creating flashcards from documents.
+- Add export to Quizzlet
