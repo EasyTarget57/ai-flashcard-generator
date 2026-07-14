@@ -2,12 +2,18 @@ import argparse
 import hashlib
 import re
 import sqlite3
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import genanki
 
 from lib.db import init_database
 from lib.decks import default_deck_name, ensure_deck_schema, get_deck_by_id, get_deck_by_name
+from lib.flashcards import delete_flashcards
 from lib.language_config import load_language_configurations
 from lib.paths import AUDIO_ROOT, DB_FILE, OUTPUT_ROOT, ensure_data_dirs
 
@@ -39,16 +45,25 @@ CARD_CSS = """
     font-family: Arial;
     font-size: 24px;
     text-align: center;
+    background-color: #ffffff;
+    color: #111827;
 }
 
 .target {
     font-size: 40px;
     margin: 20px 0;
+    color: #111827;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid #6b7280;
 }
 
 .translations {
     font-size: 28px;
     margin-top: 20px;
+    color: #1f2937;
 }
 
 .translations > div {
@@ -57,18 +72,81 @@ CARD_CSS = """
 
 .back {
     font-weight: bold;
-    color: #333;
+    color: #1f2937;
 }
 
 .pronunciation {
-    color: gray;
+    color: #6b7280;
     font-size: 18px;
 }
 
 .notes {
     margin-top: 20px;
     font-size: 16px;
-    color: #666;
+    color: #4b5563;
+}
+
+.nightMode.card,
+.nightMode .card,
+.night_mode.card,
+.night_mode .card {
+    background-color: #1f1f1f;
+    color: #f3f4f6;
+}
+
+.nightMode .target,
+.night_mode .target {
+    color: #f9fafb;
+}
+
+.nightMode hr,
+.night_mode hr {
+    border-top-color: #737373;
+}
+
+.nightMode .translations,
+.night_mode .translations {
+    color: #f3f4f6;
+}
+
+.nightMode .back,
+.night_mode .back {
+    color: #f3f4f6;
+}
+
+.nightMode .pronunciation,
+.night_mode .pronunciation {
+    color: #d1d5db;
+}
+
+.nightMode .notes,
+.night_mode .notes {
+    color: #d1d5db;
+}
+
+@media (prefers-color-scheme: dark) {
+    .card {
+        background-color: #1f1f1f;
+        color: #f3f4f6;
+    }
+
+    .target {
+        color: #f9fafb;
+    }
+
+    hr {
+        border-top-color: #737373;
+    }
+
+    .translations,
+    .back {
+        color: #f3f4f6;
+    }
+
+    .pronunciation,
+    .notes {
+        color: #d1d5db;
+    }
 }
 """
 
@@ -242,30 +320,17 @@ def export_deck(
     log(f"{len(rows)} cards")
     log(f"{len(media_files)} audio files")
 
+    test_card_ids = []
     if test_mode and delete_test_entries:
         cursor.execute(
-            "SELECT audio_filename FROM flashcards WHERE language = ? AND deck_id = ? AND test = 1",
+            "SELECT id FROM flashcards WHERE language = ? AND deck_id = ? AND test = 1",
             (language, deck_row["id"]),
         )
-        audio_files = cursor.fetchall()
-        cursor.execute(
-            "DELETE FROM flashcards WHERE language = ? AND deck_id = ? AND test = 1",
-            (language, deck_row["id"]),
-        )
-        conn.commit()
-
-        deleted_audio = 0
-        for row in audio_files:
-            if row["audio_filename"]:
-                audio_path = audio_dir / row["audio_filename"]
-                if audio_path.exists():
-                    audio_path.unlink()
-                    deleted_audio += 1
-
-        log(f"Deleted {len(audio_files)} test entries")
-        log(f"Deleted {deleted_audio} audio files")
+        test_card_ids = [row["id"] for row in cursor.fetchall()]
 
     conn.close()
+    if test_card_ids:
+        delete_flashcards(language=language, card_ids=test_card_ids, log=log)
     return output
 
 

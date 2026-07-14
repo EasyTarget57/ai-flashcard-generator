@@ -6,11 +6,12 @@ import time
 from io import StringIO
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSettings, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QTextCursor
+from PySide6.QtCore import QObject, QEvent, QRect, QSettings, QSize, QThread, QTimer, QUrl, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QKeySequence, QPainter, QPen, QTextCursor
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -29,6 +30,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTextEdit,
     QToolButton,
+    QStyle,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
@@ -37,8 +40,10 @@ from lib.edge_voices import list_edge_voice_names
 from lib.db import init_database
 from lib.decks import list_decks
 from lib.export_anki import export_deck as export_anki_deck
+from lib.flashcards import delete_flashcards
 from lib.import_cards import import_flashcards
 from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, ensure_data_dirs
+from lib.regenerate_audio import regenerate_audio
 from lib.tts_providers import get_tts_provider
 
 VERSION = "0.1.0-beta"
@@ -498,6 +503,56 @@ class CsvGuideDialog(QDialog):
         QMessageBox.information(self, "Prompt Copied", "The CSV creation prompt has been copied.")
 
 
+class SelectCheckboxDelegate(QStyledItemDelegate):
+    @staticmethod
+    def is_checked(value):
+        return value == Qt.Checked or value == Qt.CheckState.Checked or value == Qt.Checked.value
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.fillRect(option.rect, option.palette.base())
+
+        size = 16
+        x = option.rect.x() + (option.rect.width() - size) // 2
+        y = option.rect.y() + (option.rect.height() - size) // 2
+        box = QRect(x, y, size, size)
+
+        checked = self.is_checked(index.data(Qt.CheckStateRole))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(QPen(QColor("#4b5563"), 1))
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawRoundedRect(box, 3, 3)
+
+        if checked:
+            painter.setBrush(QColor("#2563eb"))
+            painter.setPen(QPen(QColor("#1d4ed8"), 1))
+            painter.drawRoundedRect(box, 3, 3)
+            painter.setPen(QPen(QColor("#ffffff"), 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawLine(x + 4, y + 8, x + 7, y + 11)
+            painter.drawLine(x + 7, y + 11, x + 12, y + 5)
+
+        painter.restore()
+
+    def editorEvent(self, event, model, option, index):
+        flags = model.flags(index)
+        if not (flags & Qt.ItemIsEnabled) or not (flags & Qt.ItemIsUserCheckable):
+            return False
+
+        if event.type() == QEvent.MouseButtonRelease:
+            position = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            if not option.rect.contains(position):
+                return False
+        elif event.type() == QEvent.KeyPress:
+            if event.key() not in (Qt.Key_Space, Qt.Key_Select):
+                return False
+        else:
+            return False
+
+        checked = self.is_checked(index.data(Qt.CheckStateRole))
+        model.setData(index, Qt.Unchecked if checked else Qt.Checked, Qt.CheckStateRole)
+        return True
+
+
 class FlashcardsPage(BasePage):
     columns = [
         ("target_language_text", "Front"),
@@ -507,9 +562,20 @@ class FlashcardsPage(BasePage):
         ("deck_name", "Deck"),
         ("source", "Source"),
     ]
+    SELECT_COLUMN = 0
+    ACTION_COLUMN_OFFSET = 1
+
+    @staticmethod
+    def item_is_checked(item):
+        if item is None:
+            return False
+        value = item.data(Qt.CheckStateRole)
+        return SelectCheckboxDelegate.is_checked(value)
 
     def __init__(self, app_window):
         super().__init__(app_window, "Flashcards")
+        self.column_actions = []
+        self.loading_cards = False
         filters = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search Front, Back, Pronunciation, Notes, Deck, Source...")
@@ -525,13 +591,39 @@ class FlashcardsPage(BasePage):
         filters.addWidget(self.columns_button)
         self.root_layout.addLayout(filters)
 
+        actions = QHBoxLayout()
+        self.select_all_button = QPushButton("Select All")
+        self.select_all_button.clicked.connect(self.table_select_all)
+        actions.addWidget(self.select_all_button)
+        self.clear_selection_button = QPushButton("Clear Selection")
+        self.clear_selection_button.clicked.connect(self.clear_checked_cards)
+        actions.addWidget(self.clear_selection_button)
+        actions.addStretch()
+        self.regenerate_selected_button = QPushButton("Regenerate Selected Audio")
+        self.regenerate_selected_button.clicked.connect(self.regenerate_selected_audio)
+        actions.addWidget(self.regenerate_selected_button)
+        self.delete_selected_button = QPushButton("Delete Selected")
+        self.delete_selected_button.clicked.connect(self.delete_selected_cards)
+        actions.addWidget(self.delete_selected_button)
+        self.root_layout.addLayout(actions)
+
         self.table = QTableWidget()
-        self.table.setColumnCount(len(self.columns) + 1)
-        self.table.setHorizontalHeaderLabels([label for _, label in self.columns] + ["Audio"])
+        self.table.setColumnCount(len(self.columns) + 2)
+        self.table.setHorizontalHeaderLabels(["Select"] + [label for _, label in self.columns] + ["Actions"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(len(self.columns), QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(len(self.columns) + 1, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(self.SELECT_COLUMN, QHeaderView.Fixed)
+        self.table.setColumnWidth(self.SELECT_COLUMN, 64)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionBehavior(QTableWidget.SelectItems)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table.setItemDelegateForColumn(self.SELECT_COLUMN, SelectCheckboxDelegate(self.table))
+        self.table.itemChanged.connect(self.card_check_changed)
+        copy_action = QAction(self.table)
+        copy_action.setShortcut(QKeySequence.Copy)
+        copy_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        copy_action.triggered.connect(self.copy_selected_cells)
+        self.table.addAction(copy_action)
         self.root_layout.addWidget(self.table)
 
         self.count_label = QLabel()
@@ -541,6 +633,7 @@ class FlashcardsPage(BasePage):
         self.audio_output = QAudioOutput(self)
         self.player.setAudioOutput(self.audio_output)
         self.build_column_menu()
+        self.update_selection_actions()
 
     def build_column_menu(self):
         self.columns_menu = self.columns_button.menu()
@@ -550,17 +643,59 @@ class FlashcardsPage(BasePage):
             self.columns_menu = QMenu(self.columns_button)
             self.columns_button.setMenu(self.columns_menu)
         self.columns_menu.clear()
+        self.column_actions = []
         for index, (_, label) in enumerate(self.columns):
             action = QAction(label, self)
             action.setCheckable(True)
-            action.setChecked(True)
-            action.toggled.connect(lambda checked, i=index: self.table.setColumnHidden(i, not checked))
+            action.toggled.connect(lambda checked, i=index: self.set_column_visible(i, checked))
             self.columns_menu.addAction(action)
+            self.column_actions.append(action)
+        self.apply_saved_column_visibility()
+
+    def column_settings_key(self):
+        language = self.current_language() or self.app_window.selected_language or "default"
+        return f"flashcards/visible_columns/{language}"
+
+    def saved_visible_columns(self):
+        settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+        value = settings.value(self.column_settings_key(), "", str)
+        known = {key for key, _ in self.columns}
+        if not value:
+            return known
+        if value == "__none__":
+            return set()
+        visible = {key for key in value.split(",") if key in known}
+        return visible or known
+
+    def save_visible_columns(self):
+        visible = []
+        for index, (key, _) in enumerate(self.columns):
+            if not self.table.isColumnHidden(index + self.ACTION_COLUMN_OFFSET):
+                visible.append(key)
+        settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+        settings.setValue(self.column_settings_key(), ",".join(visible) if visible else "__none__")
+
+    def set_column_visible(self, index, visible):
+        self.table.setColumnHidden(index + self.ACTION_COLUMN_OFFSET, not visible)
+        self.save_visible_columns()
+
+    def apply_saved_column_visibility(self):
+        if not self.column_actions:
+            return
+        visible = self.saved_visible_columns()
+        for index, (key, _) in enumerate(self.columns):
+            show = key in visible
+            action = self.column_actions[index]
+            action.blockSignals(True)
+            action.setChecked(show)
+            action.blockSignals(False)
+            self.table.setColumnHidden(index + self.ACTION_COLUMN_OFFSET, not show)
 
     def load_cards(self):
         language = self.current_language()
         if not language:
             return
+        self.apply_saved_column_visibility()
         search = f"%{self.search.text().strip()}%"
         where = "f.language = ?"
         params = [language]
@@ -581,7 +716,6 @@ class FlashcardsPage(BasePage):
                 LEFT JOIN decks d ON d.id = f.deck_id
                 WHERE {where}
                 ORDER BY f.id DESC
-                LIMIT 500
                 """,
                 params,
             ).fetchall()
@@ -590,15 +724,187 @@ class FlashcardsPage(BasePage):
                 (language,),
             ).fetchone()[0]
 
+        self.loading_cards = True
         self.table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
+            select_item = QTableWidgetItem()
+            select_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
+            select_item.setData(Qt.CheckStateRole, Qt.Unchecked)
+            select_item.setData(Qt.UserRole, row["id"])
+            self.table.setItem(row_index, self.SELECT_COLUMN, select_item)
             for column_index, (key, _) in enumerate(self.columns):
-                self.table.setItem(row_index, column_index, QTableWidgetItem(row[key] or ""))
-            play = QPushButton("Play")
-            play.setEnabled(bool(row["audio_filename"]))
-            play.clicked.connect(lambda _checked=False, filename=row["audio_filename"]: self.play_audio(filename))
-            self.table.setCellWidget(row_index, len(self.columns), play)
-        self.count_label.setText(f"Showing {len(rows)} of {total} cards")
+                item = QTableWidgetItem(row[key] or "")
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                self.table.setItem(row_index, column_index + self.ACTION_COLUMN_OFFSET, item)
+            action_widget = QWidget()
+            action_layout = QHBoxLayout(action_widget)
+            action_layout.setContentsMargins(0, 0, 0, 0)
+            action_layout.setSpacing(2)
+            play = self.icon_button(
+                QStyle.StandardPixmap.SP_MediaPlay,
+                "Play audio",
+                lambda _checked=False, filename=row["audio_filename"]: self.play_audio(filename),
+                enabled=bool(row["audio_filename"]),
+            )
+            action_layout.addWidget(play)
+            regenerate = self.icon_button(
+                QStyle.StandardPixmap.SP_BrowserReload,
+                "Regenerate audio",
+                lambda _checked=False, card_id=row["id"]: self.regenerate_card_audio(card_id),
+            )
+            action_layout.addWidget(regenerate)
+            delete = self.icon_button(
+                QStyle.StandardPixmap.SP_TrashIcon,
+                "Delete card",
+                lambda _checked=False, card_id=row["id"]: self.delete_cards([card_id]),
+            )
+            action_layout.addWidget(delete)
+            self.table.setCellWidget(row_index, len(self.columns) + 1, action_widget)
+        self.loading_cards = False
+        self.update_count_label(len(rows), total)
+        self.update_selection_actions()
+
+    def icon_button(self, standard_pixmap, tooltip, callback, enabled=True):
+        button = QToolButton()
+        button.setIcon(self.style().standardIcon(standard_pixmap))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(28, 28)
+        button.setToolTip(tooltip)
+        button.setAutoRaise(True)
+        button.setEnabled(enabled)
+        button.clicked.connect(callback)
+        return button
+
+    def update_count_label(self, shown, total):
+        selected = len(self.selected_card_ids())
+        suffix = f" | Selected {selected}" if selected else ""
+        self.count_label.setText(f"Showing {shown} of {total} cards{suffix}")
+
+    def copy_selected_cells(self):
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return
+        copied_rows = []
+        for selected_range in ranges:
+            for row in range(selected_range.topRow(), selected_range.bottomRow() + 1):
+                copied_cells = []
+                for column in range(selected_range.leftColumn(), selected_range.rightColumn() + 1):
+                    item = self.table.item(row, column)
+                    copied_cells.append(item.text() if item is not None else "")
+                copied_rows.append("\t".join(copied_cells))
+        QApplication.clipboard().setText("\n".join(copied_rows))
+
+    def selected_card_ids(self):
+        ids = []
+        seen = set()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, self.SELECT_COLUMN)
+            if item is None:
+                continue
+            card_id = item.data(Qt.UserRole)
+            if self.item_is_checked(item) and card_id is not None and card_id not in seen:
+                ids.append(card_id)
+                seen.add(card_id)
+        return ids
+
+    def card_check_changed(self, item):
+        if self.loading_cards or item.column() != self.SELECT_COLUMN:
+            return
+        self.update_selection_actions()
+
+    def update_selection_actions(self):
+        selected = len(self.selected_card_ids())
+        self.regenerate_selected_button.setEnabled(selected > 0)
+        self.delete_selected_button.setEnabled(selected > 0)
+        if self.count_label.text():
+            parts = self.count_label.text().split(" | Selected ", 1)
+            suffix = f" | Selected {selected}" if selected else ""
+            self.count_label.setText(parts[0] + suffix)
+
+    def table_select_all(self):
+        self.set_all_checked(Qt.Checked)
+
+    def clear_checked_cards(self):
+        self.set_all_checked(Qt.Unchecked)
+
+    def set_all_checked(self, state):
+        self.loading_cards = True
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, self.SELECT_COLUMN)
+            if item is not None:
+                item.setCheckState(state)
+        self.loading_cards = False
+        self.update_selection_actions()
+
+    def regenerate_card_audio(self, card_id):
+        self.regenerate_audio_for_ids([card_id])
+
+    def regenerate_selected_audio(self):
+        self.regenerate_audio_for_ids(self.selected_card_ids())
+
+    def regenerate_audio_for_ids(self, card_ids):
+        if not card_ids:
+            QMessageBox.information(self, "No Selection", "Select one or more cards first.")
+            return
+        count = len(card_ids)
+        response = QMessageBox.question(
+            self,
+            "Regenerate Audio",
+            f"Regenerate audio for {count} card{'s' if count != 1 else ''}?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if response != QMessageBox.Yes:
+            return
+        self.stop_current_audio()
+        dialog = FunctionDialog(
+            "Regenerate Audio",
+            regenerate_audio,
+            {
+                "language": self.current_language(),
+                "card_ids": card_ids,
+                "force": True,
+            },
+            start_message=f"Regenerating audio for {count} cards...",
+            on_success=lambda _result: self.load_cards(),
+            parent=self,
+        )
+        dialog.exec()
+
+    def delete_selected_cards(self):
+        self.delete_cards(self.selected_card_ids())
+
+    def delete_cards(self, card_ids):
+        if not card_ids:
+            QMessageBox.information(self, "No Selection", "Select one or more cards first.")
+            return
+        count = len(card_ids)
+        response = QMessageBox.question(
+            self,
+            "Delete Flashcards",
+            f"Delete {count} selected card{'s' if count != 1 else ''} and their audio files?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if response != QMessageBox.Yes:
+            return
+        self.stop_current_audio()
+        dialog = FunctionDialog(
+            "Delete Flashcards",
+            delete_flashcards,
+            {
+                "language": self.current_language(),
+                "card_ids": card_ids,
+            },
+            start_message=f"Deleting {count} cards...",
+            on_success=lambda _result: self.load_cards(),
+            parent=self,
+        )
+        dialog.exec()
+
+    def stop_current_audio(self):
+        self.player.stop()
+        self.player.setSource(QUrl())
 
     def play_audio(self, filename):
         if not filename:
