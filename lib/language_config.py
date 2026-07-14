@@ -42,7 +42,7 @@ def load_language_configurations(db_file=DB_FILE):
         ).fetchall()
     except sqlite3.OperationalError as error:
         raise RuntimeError(
-            "language_configuration table not found. Run: python init_db.py"
+            "language_configuration table not found. Start the app to initialize the database."
         ) from error
     finally:
         connection.close()

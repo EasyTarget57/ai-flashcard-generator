@@ -254,7 +254,7 @@ def open_export_output(output):
 
 class FunctionWorker(QObject):
     output = Signal(str)
-    finished = Signal(int, object)
+    completed = Signal(int, str)
 
     def __init__(self, function, kwargs):
         super().__init__()
@@ -264,10 +264,10 @@ class FunctionWorker(QObject):
     def run(self):
         try:
             result = self.function(**self.kwargs, log=self.log)
-            self.finished.emit(0, result)
+            self.completed.emit(0, "" if result is None else str(result))
         except Exception as error:
             self.output.emit(f"\nERROR: {error}")
-            self.finished.emit(1, None)
+            self.completed.emit(1, "")
 
     def log(self, message=""):
         self.output.emit(str(message))
@@ -296,10 +296,11 @@ class FunctionDialog(QDialog):
         self.worker = FunctionWorker(function, kwargs)
         self.worker.moveToThread(self.thread)
         self.worker.output.connect(self.append_line)
-        self.worker.finished.connect(self.finished)
-        self.worker.finished.connect(self.thread.quit)
+        self.worker.completed.connect(self.complete)
+        self.worker.completed.connect(self.thread.quit)
         self.thread.started.connect(self.worker.run)
         self.thread.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
 
         if start_message:
             self.append_line(start_message)
@@ -310,7 +311,7 @@ class FunctionDialog(QDialog):
         self.output.insertPlainText(text + "\n")
         self.output.moveCursor(QTextCursor.End)
 
-    def finished(self, exit_code, result):
+    def complete(self, exit_code, result):
         self.result = result
         self.append_line(f"\nDone. Exit code: {exit_code}")
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
@@ -747,7 +748,7 @@ class ExportPage(BasePage):
             export_anki_deck,
             kwargs,
             start_message=f"Exporting {deck_name}...",
-            on_success=lambda output: open_export_output(output) if output and output.exists() else None,
+            on_success=lambda output: open_export_output(output) if output and Path(output).exists() else None,
             parent=self,
         )
         dialog.exec()
