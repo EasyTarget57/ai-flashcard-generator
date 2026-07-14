@@ -40,7 +40,7 @@ from lib.decks import list_decks
 from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, OUTPUT_ROOT, ensure_data_dirs
 from lib.tts_providers import get_tts_provider
 
-VERSION = "0.1.0 Beta"
+VERSION = "0.1.0-beta"
 PROJECT_ROOT = Path(__file__).resolve().parent
 PYTHON = sys.executable
 CSV_HEADER = "Front,Back,Pronunciation,Notes"
