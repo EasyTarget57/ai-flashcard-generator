@@ -882,7 +882,11 @@ class FlashcardsPage(BasePage):
         response = QMessageBox.question(
             self,
             "Delete Flashcards",
-            f"Delete {count} selected card{'s' if count != 1 else ''} and their audio files?",
+            (
+                f"Delete {count} selected card{'s' if count != 1 else ''} and their audio files?\n\n"
+                "Note: Deleting this card only removes it from this application. Existing cards in Anki "
+                "are not deleted automatically and must be removed manually."
+            ),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
