@@ -81,6 +81,8 @@ When this process finished (and your Anki is not open). This will open an Anki i
 
 After import in Anki, you will have the deck. This is how it looks like. We have the audio (which auto plays) and the target language text. When you show answer you will see the translation and the pronunciation (if you added a Pronunciation column to your import).
 
+Note: for now the translation is only clearly visible in Anki light mode.
+
 ---
 
 ## Settings
@@ -139,6 +141,7 @@ TODO: Add information about database/audio/input/output folder location. Short d
 Future improvements include:
 
 - Open bug: Audio fails when output device changes
+- Support for Anki dark mode.
 - Regenerate Audio (implemented but not added to UI) and other deck management features
 - Support for creating flashcards from youtube link
 - Support for creating flashcards from documents.
