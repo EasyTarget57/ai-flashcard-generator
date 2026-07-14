@@ -1,5 +1,4 @@
 import csv
-import re
 import sqlite3
 import sys
 import tempfile
@@ -7,7 +6,7 @@ import time
 from io import StringIO
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, QThread, QTimer, QUrl, Signal
+from PySide6.QtCore import QObject, QSettings, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QTextCursor
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -34,15 +33,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from edge_voices import list_edge_voice_names
-from init_db import init_database
+from lib.edge_voices import list_edge_voice_names
+from lib.db import init_database
 from lib.decks import list_decks
-from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, OUTPUT_ROOT, ensure_data_dirs
+from lib.export_anki import export_deck as export_anki_deck
+from lib.import_cards import import_flashcards
+from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, ensure_data_dirs
 from lib.tts_providers import get_tts_provider
 
 VERSION = "0.1.0-beta"
-PROJECT_ROOT = Path(__file__).resolve().parent
-PYTHON = sys.executable
 CSV_HEADER = "Front,Back,Pronunciation,Notes"
 PROJECT_URL = "https://github.com/EasyTarget57/ai-flashcard-generator"
 OPENAI_API_KEYS_URL = "https://platform.openai.com/settings/organization/api-keys"
@@ -127,14 +126,6 @@ For notes or class documents, ask it to extract useful vocabulary and create nat
 3. Paste the CSVs here
 
 Copy the contents of vocabulary.csv and sentences.csv into the matching fields on this screen, then click Import."""
-
-
-def utf8_process_environment():
-    environment = QProcessEnvironment.systemEnvironment()
-    environment.insert("PYTHONIOENCODING", "utf-8")
-    environment.insert("PYTHONUTF8", "1")
-    environment.insert("PYTHONUNBUFFERED", "1")
-    return environment
 
 
 def ensure_database():
@@ -261,88 +252,34 @@ def open_export_output(output):
     )
 
 
-def safe_filename(name):
-    filename = re.sub(r'[<>:"/\\|?*]+', "_", name).strip()
-    return filename or "deck"
+class FunctionWorker(QObject):
+    output = Signal(str)
+    finished = Signal(int, object)
+
+    def __init__(self, function, kwargs):
+        super().__init__()
+        self.function = function
+        self.kwargs = kwargs
+
+    def run(self):
+        try:
+            result = self.function(**self.kwargs, log=self.log)
+            self.finished.emit(0, result)
+        except Exception as error:
+            self.output.emit(f"\nERROR: {error}")
+            self.finished.emit(1, None)
+
+    def log(self, message=""):
+        self.output.emit(str(message))
 
 
-class ProcessDialog(QDialog):
-    def __init__(self, title, command, stdin_text="", on_success=None, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.resize(640, 460)
-        self.on_success = on_success
-        self.exit_code = None
-        self.completed = False
-
-        layout = QVBoxLayout(self)
-        self.output = QTextEdit()
-        self.output.setReadOnly(True)
-        self.output.setFontFamily("Consolas")
-        layout.addWidget(self.output)
-
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok)
-        self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
-        self.buttons.accepted.connect(self.accept)
-        layout.addWidget(self.buttons)
-
-        self.process = QProcess(self)
-        self.process.setProcessEnvironment(utf8_process_environment())
-        self.process.setWorkingDirectory(str(PROJECT_ROOT))
-        self.process.setProgram(command[0])
-        self.process.setArguments(command[1:])
-        self.process.setProcessChannelMode(QProcess.MergedChannels)
-        self.process.readyReadStandardOutput.connect(self.read_output)
-        self.process.finished.connect(self.finished)
-        self.watchdog = QTimer(self)
-        self.watchdog.setInterval(250)
-        self.watchdog.timeout.connect(self.check_finished)
-
-        self.append(f"Running: {' '.join(command)}\n")
-        self.process.start()
-        if stdin_text:
-            self.process.write(stdin_text.encode("utf-8"))
-        self.process.closeWriteChannel()
-        self.watchdog.start()
-
-    def append(self, text):
-        self.output.moveCursor(QTextCursor.End)
-        self.output.insertPlainText(text)
-        self.output.moveCursor(QTextCursor.End)
-
-    def read_output(self):
-        text = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        self.append(text)
-
-    def finished(self, exit_code, _exit_status):
-        self.complete(exit_code)
-
-    def check_finished(self):
-        if self.process.state() == QProcess.NotRunning:
-            self.complete(self.process.exitCode())
-
-    def complete(self, exit_code):
-        if self.completed:
-            return
-        self.completed = True
-        self.watchdog.stop()
-        self.exit_code = exit_code
-        self.read_output()
-        self.append(f"\nDone. Exit code: {exit_code}\n")
-        self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
-        if exit_code == 0 and self.on_success:
-            QTimer.singleShot(250, self.on_success)
-
-
-class MultiProcessDialog(QDialog):
-    def __init__(self, title, commands, parent=None):
+class FunctionDialog(QDialog):
+    def __init__(self, title, function, kwargs, start_message=None, on_success=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(720, 500)
-        self.commands = commands
-        self.command_index = -1
-        self.failed = False
-        self.completed_current_process = False
+        self.on_success = on_success
+        self.result = None
 
         layout = QVBoxLayout(self)
         self.output = QTextEdit()
@@ -355,60 +292,30 @@ class MultiProcessDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         layout.addWidget(self.buttons)
 
-        self.process = QProcess(self)
-        self.process.setProcessEnvironment(utf8_process_environment())
-        self.process.setWorkingDirectory(str(PROJECT_ROOT))
-        self.process.setProcessChannelMode(QProcess.MergedChannels)
-        self.process.readyReadStandardOutput.connect(self.read_output)
-        self.process.finished.connect(self.finished)
-        self.watchdog = QTimer(self)
-        self.watchdog.setInterval(250)
-        self.watchdog.timeout.connect(self.check_finished)
-        self.start_next()
+        self.thread = QThread(self)
+        self.worker = FunctionWorker(function, kwargs)
+        self.worker.moveToThread(self.thread)
+        self.worker.output.connect(self.append_line)
+        self.worker.finished.connect(self.finished)
+        self.worker.finished.connect(self.thread.quit)
+        self.thread.started.connect(self.worker.run)
+        self.thread.finished.connect(self.worker.deleteLater)
 
-    def append(self, text):
+        if start_message:
+            self.append_line(start_message)
+        self.thread.start()
+
+    def append_line(self, text):
         self.output.moveCursor(QTextCursor.End)
-        self.output.insertPlainText(text)
+        self.output.insertPlainText(text + "\n")
         self.output.moveCursor(QTextCursor.End)
 
-    def start_next(self):
-        self.command_index += 1
-        if self.command_index >= len(self.commands):
-            self.append("\nDone.\n")
-            self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
-            return
-        command = self.commands[self.command_index]
-        self.completed_current_process = False
-        self.append(f"Running: {' '.join(command)}\n")
-        self.process.setProgram(command[0])
-        self.process.setArguments(command[1:])
-        self.process.start()
-        self.process.closeWriteChannel()
-        self.watchdog.start()
-
-    def read_output(self):
-        text = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        self.append(text)
-
-    def finished(self, exit_code, _exit_status):
-        self.complete_current_process(exit_code)
-
-    def check_finished(self):
-        if self.process.state() == QProcess.NotRunning:
-            self.complete_current_process(self.process.exitCode())
-
-    def complete_current_process(self, exit_code):
-        if self.completed_current_process:
-            return
-        self.completed_current_process = True
-        self.watchdog.stop()
-        self.read_output()
-        self.append(f"\nExit code: {exit_code}\n\n")
-        if exit_code != 0:
-            self.failed = True
-            self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
-            return
-        self.start_next()
+    def finished(self, exit_code, result):
+        self.result = result
+        self.append_line(f"\nDone. Exit code: {exit_code}")
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
+        if exit_code == 0 and self.on_success:
+            QTimer.singleShot(250, lambda: self.on_success(result))
 
 
 class BasePage(QWidget):
@@ -771,17 +678,20 @@ class ImportPage(BasePage):
         ]
         files = [path for path in files if path]
 
-        command = [PYTHON, "create_flashcards.py", "--language", language]
-        if self.source.text().strip():
-            command.extend(["--source", self.source.text().strip()])
-        if self.deck.text().strip():
-            command.extend(["--deck", self.deck.text().strip()])
-        for path in files:
-            command.extend(["--csv", path.name])
-        self.run_import_commands([command])
-
-    def run_import_commands(self, commands):
-        dialog = MultiProcessDialog("Import Result", commands, self)
+        kwargs = {
+            "language": language,
+            "csv_names": [path.name for path in files],
+            "source": self.source.text().strip() or None,
+            "deck_name": self.deck.text().strip() or None,
+            "test_mode": False,
+        }
+        dialog = FunctionDialog(
+            "Import Result",
+            import_flashcards,
+            kwargs,
+            start_message="Importing flashcards...",
+            parent=self,
+        )
         dialog.exec()
         self.app_window.flashcards_page.load_cards()
         self.app_window.export_page.load_decks()
@@ -827,12 +737,17 @@ class ExportPage(BasePage):
         if deck_id is None:
             QMessageBox.information(self, "No Deck", "No deck exists for the selected language.")
             return
-        command = [PYTHON, "generate_apkg.py", "--language", language, "--deck-id", str(deck_id)]
-        output = OUTPUT_ROOT / language / f"{safe_filename(deck_name)}.apkg"
-        dialog = ProcessDialog(
+        kwargs = {
+            "language": language,
+            "deck_id": deck_id,
+            "test_mode": False,
+        }
+        dialog = FunctionDialog(
             "Export Result",
-            command,
-            on_success=lambda: open_export_output(output) if output.exists() else None,
+            export_anki_deck,
+            kwargs,
+            start_message=f"Exporting {deck_name}...",
+            on_success=lambda output: open_export_output(output) if output and output.exists() else None,
             parent=self,
         )
         dialog.exec()
