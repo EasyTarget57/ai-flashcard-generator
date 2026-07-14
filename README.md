@@ -6,8 +6,6 @@ AI Flashcard Generator is a desktop application that helps you create Anki decks
 
 > ⚠️ This is an early beta release. Feedback, bug reports, and suggestions are always welcome.
 
-![Flashcards screen](assets/screenshots_README/Flashcards.png)
-
 ---
 
 ## Features
@@ -20,6 +18,9 @@ AI Flashcard Generator is a desktop application that helps you create Anki decks
 - Regenerate audio at any time
 - Export directly to Anki (`.apkg`)
 - Support for multiple languages and decks
+
+![Flashcards screen](assets/screenshots_README/Flashcards.png)
+
 
 ---
 
