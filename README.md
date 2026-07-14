@@ -2,6 +2,15 @@
 
 Generate Anki flashcards with high-quality AI-generated audio for multiple languages.
 
+# Setup
+- Download for windows:
+https://github.com/EasyTarget57/ai-flashcard-generator/releases/download/v0.1.0-beta/AI-Flashcard-Generator-windows.zip
+- Extract the zip
+- (optionally), move the folder
+- Double click the exe
+
+Note: You will get a warning from Windows Defender because the code is not signed. I need a paid certificate to sign my code so I will not do that. Please click more and run anyway.
+
 ---
 # Usage
 
