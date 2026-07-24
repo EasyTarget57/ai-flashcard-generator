@@ -23,3 +23,18 @@ if (-not (Test-Path $python)) {
     --exclude-module "PySide6.QtQuick" `
     --exclude-module "PySide6.QtQml" `
     "flashcard-generator.py"
+
+$distExe = Join-Path $PSScriptRoot "dist\AI Flashcard Generator\AI Flashcard Generator.exe"
+$buildExe = Join-Path $PSScriptRoot "build\AI Flashcard Generator\AI Flashcard Generator.exe"
+
+if (Test-Path $buildExe) {
+    Remove-Item $buildExe
+}
+
+if (-not (Test-Path $distExe)) {
+    throw "Build completed, but executable was not found at: $distExe"
+}
+
+Write-Host ""
+Write-Host "Executable created:"
+Write-Host $distExe
