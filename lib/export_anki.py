@@ -188,6 +188,22 @@ def build_model(language, language_config):
     )
 
 
+def csv_type_order(language_config):
+    order = {}
+    for csv_name in language_config.get("csv_files", []):
+        csv_type = Path(csv_name).stem
+        if csv_type and csv_type not in order:
+            order[csv_type] = len(order)
+    return order
+
+
+def flashcard_sort_key(row, type_order):
+    csv_type = row["type"] or ""
+    if csv_type in type_order:
+        return type_order[csv_type], "", row["id"]
+    return len(type_order), csv_type, row["id"]
+
+
 def add_flashcard_from_db(row, *, model, deck, audio_dir, media_files, language, log=print):
     field_values = []
     for field in FIELDS:
@@ -284,11 +300,12 @@ def export_deck(
         SELECT *
         FROM flashcards
         WHERE language = ? AND deck_id = ? AND test = ?
-        ORDER BY type, id
+        ORDER BY id
         """,
         (language, deck_row["id"], 1 if test_mode else 0),
     )
-    rows = cursor.fetchall()
+    type_order = csv_type_order(language_config)
+    rows = sorted(cursor.fetchall(), key=lambda row: flashcard_sort_key(row, type_order))
 
     if not rows:
         conn.close()
