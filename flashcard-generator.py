@@ -46,7 +46,7 @@ from lib.paths import AUDIO_ROOT, DB_FILE, INPUT_DIR, ensure_data_dirs
 from lib.regenerate_audio import regenerate_audio
 from lib.tts_providers import get_tts_provider
 
-VERSION = "0.1.1-beta"
+VERSION = "0.1.2-beta"
 CSV_HEADER = "Front,Back,Pronunciation,Notes"
 PROJECT_URL = "https://github.com/EasyTarget57/ai-flashcard-generator"
 OPENAI_API_KEYS_URL = "https://platform.openai.com/settings/organization/api-keys"
