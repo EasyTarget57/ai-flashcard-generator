@@ -116,6 +116,9 @@ def regenerate_audio(
     *,
     language,
     card_ids=None,
+    tts_provider=None,
+    tts_config=None,
+    audio_text_by_id=None,
     dry_run=False,
     force=False,
     retries=2,
@@ -135,6 +138,11 @@ def regenerate_audio(
         raise FileNotFoundError(f"Database not found: {db_file}")
 
     language_config = load_language_configuration(language, db_file)
+    if tts_config:
+        language_config.update(tts_config)
+    provider_name = tts_provider or language_config.get("tts_provider", "openai")
+    language_config["tts_provider"] = provider_name
+    audio_text_by_id = {int(card_id): text for card_id, text in (audio_text_by_id or {}).items()}
     audio_dir = Path(audio_root) / language
 
     connection = sqlite3.connect(str(db_file))
@@ -159,7 +167,6 @@ def regenerate_audio(
         params,
     ).fetchall()
 
-    provider_name = language_config.get("tts_provider", "openai")
     audio_extension = get_tts_audio_extension(provider_name)
 
     pending = [
@@ -183,7 +190,8 @@ def regenerate_audio(
 
     if dry_run:
         for card in pending:
-            log(f"  WOULD GENERATE ID:{card['id']}  {card['target_language_text']}")
+            text = audio_text_by_id.get(card["id"], card["target_language_text"])
+            log(f"  WOULD GENERATE ID:{card['id']}  {text}")
         connection.close()
         return {"regenerated": 0, "failed": 0, "skipped": skipped}
 
@@ -204,12 +212,13 @@ def regenerate_audio(
         for card in pending:
             card_id = card["id"]
             old_filename = card["audio_filename"]
-            log(f"  GEN  ID:{card_id}  {card['target_language_text']}")
+            audio_text = audio_text_by_id.get(card_id, card["target_language_text"])
+            log(f"  GEN  ID:{card_id}  {audio_text}")
 
             try:
                 generated_path, new_filename = generate_with_retries(
                     provider,
-                    card["target_language_text"],
+                    audio_text,
                     card_id,
                     staging_dir,
                     retries,

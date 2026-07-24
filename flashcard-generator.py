@@ -203,6 +203,30 @@ def voice_looks_incompatible(provider, voice):
     return False
 
 
+def tts_config_for_provider(language_config, provider):
+    config = dict(language_config)
+    language = config.get("language")
+    language_name = config.get("name")
+    defaults = default_tts_values(language, provider, language_name)
+    config["tts_provider"] = provider
+    for key, value in defaults.items():
+        current = config.get(key)
+        if not current or (key == "tts_voice" and voice_looks_incompatible(provider, current)):
+            config[key] = value
+
+    if provider != "openai":
+        config["instructions"] = None
+    if provider != "fptai":
+        config["tts_speed"] = None
+    elif config.get("tts_speed") is not None:
+        config["tts_speed"] = float(config["tts_speed"])
+    if provider != "edge":
+        config["tts_rate"] = None
+        config["tts_volume"] = None
+        config["tts_pitch"] = None
+    return config
+
+
 def csv_has_data(text):
     if not text.strip():
         return False
@@ -322,6 +346,128 @@ class FunctionDialog(QDialog):
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
         if exit_code == 0 and self.on_success:
             QTimer.singleShot(250, lambda: self.on_success(result))
+
+
+class RegenerateAudioOptionsDialog(QDialog):
+    def __init__(self, *, language_config, card_count, audio_text=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Regenerate Audio")
+        self.resize(520, 320 if card_count == 1 else 180)
+        self.language_config = dict(language_config)
+        self.card_count = card_count
+        self.preview_thread = None
+        self.preview_worker = None
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.provider = QComboBox()
+        self.provider.addItems(["edge", "openai", "fptai"])
+        provider_index = self.provider.findText(self.language_config.get("tts_provider", "edge"))
+        self.provider.setCurrentIndex(provider_index if provider_index >= 0 else 0)
+        form.addRow("TTS Provider", self.provider)
+
+        self.audio_text = None
+        self.preview_status = None
+        self.preview_button = None
+        if card_count == 1:
+            self.audio_text = QPlainTextEdit()
+            self.audio_text.setPlainText(audio_text or "")
+            self.audio_text.setFixedHeight(90)
+            self.audio_text.textChanged.connect(self.update_preview_button)
+            form.addRow("Audio", self.audio_text)
+
+        layout.addLayout(form)
+
+        if card_count == 1:
+            preview_footer = QHBoxLayout()
+            self.preview_status = QLabel("")
+            self.preview_status.setObjectName("InfoText")
+            preview_footer.addWidget(self.preview_status)
+            preview_footer.addStretch()
+            self.preview_button = QPushButton("Generate Test Audio")
+            self.preview_button.clicked.connect(self.generate_preview_audio)
+            preview_footer.addWidget(self.preview_button)
+            layout.addLayout(preview_footer)
+
+            self.preview_player = QMediaPlayer(self)
+            self.preview_audio_output = QAudioOutput(self)
+            self.preview_player.setAudioOutput(self.preview_audio_output)
+        else:
+            note = QLabel(f"Regenerate audio for {card_count} selected cards using the selected TTS provider.")
+            note.setObjectName("InfoText")
+            note.setWordWrap(True)
+            layout.addWidget(note)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+        self.update_preview_button()
+
+    def selected_provider(self):
+        return self.provider.currentText()
+
+    def selected_config(self):
+        return tts_config_for_provider(self.language_config, self.selected_provider())
+
+    def selected_audio_text(self):
+        if self.audio_text is None:
+            return None
+        return self.audio_text.toPlainText().strip()
+
+    def update_preview_button(self):
+        if self.preview_button is None:
+            return
+        has_text = bool(self.selected_audio_text())
+        self.preview_button.setEnabled(has_text and self.preview_thread is None)
+
+    def generate_preview_audio(self):
+        text = self.selected_audio_text()
+        if not text:
+            QMessageBox.information(self, "Nothing to Preview", "Enter text to generate a test audio preview.")
+            return
+
+        try:
+            config = self.selected_config()
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid Settings", str(error))
+            return
+
+        preview_dir = Path(tempfile.gettempdir()) / "FlashcardGenerator" / "tts-preview"
+        self.preview_status.setText("Generating audio...")
+        self.preview_button.setEnabled(False)
+
+        self.preview_thread = QThread(self)
+        self.preview_worker = TtsPreviewWorker(self.selected_provider(), config, text, preview_dir)
+        self.preview_worker.moveToThread(self.preview_thread)
+        self.preview_thread.started.connect(self.preview_worker.run)
+        self.preview_worker.finished.connect(self.preview_generated)
+        self.preview_worker.failed.connect(self.preview_failed)
+        self.preview_worker.finished.connect(self.preview_thread.quit)
+        self.preview_worker.failed.connect(self.preview_thread.quit)
+        self.preview_thread.finished.connect(self.preview_worker.deleteLater)
+        self.preview_thread.finished.connect(self.preview_thread_finished)
+        self.preview_thread.start()
+
+    def preview_generated(self, path):
+        self.preview_status.setText("Playing preview.")
+        self.preview_player.setSource(QUrl.fromLocalFile(path))
+        self.preview_player.play()
+
+    def preview_failed(self, message):
+        self.preview_status.setText("Preview failed.")
+        QMessageBox.critical(self, "Preview Failed", f"Could not generate test audio:\n{message}")
+
+    def preview_thread_finished(self):
+        self.preview_thread = None
+        self.preview_worker = None
+        self.update_preview_button()
+
+    def accept(self):
+        if self.card_count == 1 and not self.selected_audio_text():
+            QMessageBox.information(self, "Audio Text Required", "Enter text to regenerate audio.")
+            return
+        super().accept()
 
 
 class BasePage(QWidget):
@@ -837,16 +983,54 @@ class FlashcardsPage(BasePage):
         self.update_selection_actions()
 
     def regenerate_card_audio(self, card_id):
-        self.regenerate_audio_for_ids([card_id])
+        self.regenerate_audio_for_ids([card_id], single_card=True)
 
     def regenerate_selected_audio(self):
         self.regenerate_audio_for_ids(self.selected_card_ids())
 
-    def regenerate_audio_for_ids(self, card_ids):
+    def card_front_text(self, card_id):
+        with connect_db() as connection:
+            row = connection.execute(
+                """
+                SELECT target_language_text
+                FROM flashcards
+                WHERE id = ? AND language = ?
+                """,
+                (card_id, self.current_language()),
+            ).fetchone()
+        return row["target_language_text"] if row else None
+
+    def regenerate_audio_for_ids(self, card_ids, single_card=False):
         if not card_ids:
             QMessageBox.information(self, "No Selection", "Select one or more cards first.")
             return
         count = len(card_ids)
+        language_config = self.current_language_config()
+        if not language_config:
+            QMessageBox.warning(self, "No Language", "Select a language first.")
+            return
+
+        audio_text = None
+        if single_card and count == 1:
+            audio_text = self.card_front_text(card_ids[0])
+            if audio_text is None:
+                QMessageBox.warning(self, "Card Missing", "Could not find the selected card.")
+                return
+
+        options = RegenerateAudioOptionsDialog(
+            language_config=language_config,
+            card_count=count,
+            audio_text=audio_text,
+            parent=self,
+        )
+        if options.exec() != QDialog.Accepted:
+            return
+
+        selected_audio_text = options.selected_audio_text()
+        audio_text_by_id = None
+        if selected_audio_text is not None:
+            audio_text_by_id = {card_ids[0]: selected_audio_text}
+
         response = QMessageBox.question(
             self,
             "Regenerate Audio",
@@ -863,6 +1047,9 @@ class FlashcardsPage(BasePage):
             {
                 "language": self.current_language(),
                 "card_ids": card_ids,
+                "tts_provider": options.selected_provider(),
+                "tts_config": options.selected_config(),
+                "audio_text_by_id": audio_text_by_id,
                 "force": True,
             },
             start_message=f"Regenerating audio for {count} cards...",
